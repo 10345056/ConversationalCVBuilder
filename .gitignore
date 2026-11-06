@@ -1,0 +1,29 @@
+# Frontend
+node_modules/
+**/node_modules/
+**/dist/
+**/build/
+frontend/.env
+frontend/.env.local
+!.env.example
+/.env
+/.env.*
+
+# .NET
+**/bin/
+**/obj/
+*.user
+*.suo
+
+# IDE and OS
+.vscode/
+.idea/
+**/.vs/
+.DS_Store
+Thumbs.db
+
+# Local data and generated root-level npm artifacts
+*.db
+*.db-shm
+*.db-wal
+/package-lock.json

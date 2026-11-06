@@ -1,0 +1,12 @@
+﻿conversational-cv-builder@0.1.0 <project-root>\frontend
++-- @fluentui/react-components@9.75.1
++-- @fluentui/react-icons@2.0.345
++-- @types/react-dom@18.3.7
++-- @types/react@18.3.31
++-- @vitejs/plugin-react@4.7.0
++-- framer-motion@14.10.0
++-- react-dom@18.3.1
++-- react@18.3.1
++-- typescript@5.9.3
+`-- vite@5.4.21
+

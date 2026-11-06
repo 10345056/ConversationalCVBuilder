@@ -1,0 +1,99 @@
+@ConversationalCVBuilder.Api_HostAddress = https://localhost:5001
+
+GET {{ConversationalCVBuilder.Api_HostAddress}}/health
+Accept: application/json
+
+###
+
+GET {{ConversationalCVBuilder.Api_HostAddress}}/api/workspace
+Accept: application/json
+
+###
+
+POST {{ConversationalCVBuilder.Api_HostAddress}}/api/workspace/messages
+Content-Type: application/json
+
+{
+  "message": "Your full name"
+}
+
+###
+
+PUT {{ConversationalCVBuilder.Api_HostAddress}}/api/workspace/template
+Content-Type: application/json
+
+{
+  "templateId": "modern"
+}
+
+###
+
+PUT {{ConversationalCVBuilder.Api_HostAddress}}/api/workspace/profile
+Content-Type: application/json
+
+{
+  "fullName": "Jordan Davis",
+  "targetRole": "Senior Product Designer",
+  "email": "jordan.davis@example.com",
+  "phone": "+1 415 555 0138",
+  "location": "San Francisco, CA",
+  "linkedIn": "https://www.linkedin.com/in/jordan-davis",
+  "summary": "Customer-focused product designer with 8+ years of experience.",
+  "skills": ["Product strategy", "UX research", "Accessibility"],
+  "experience": ["Senior Product Designer | Northstar Digital | 2021–Present"],
+  "education": ["B.A. Interaction Design | California College of the Arts"],
+  "certifications": ["Certified Professional in Accessibility Core Competencies"],
+  "projects": ["Customer onboarding redesign"],
+  "languages": ["English — Native"],
+  "achievements": ["2023 Northstar Customer Impact Award"]
+}
+
+###
+
+GET {{ConversationalCVBuilder.Api_HostAddress}}/api/export/docx?templateId=modern
+
+###
+
+POST {{ConversationalCVBuilder.Api_HostAddress}}/api/chat/message
+Content-Type: application/json
+
+{
+  "message": "Avery Example"
+}
+
+###
+
+GET {{ConversationalCVBuilder.Api_HostAddress}}/api/cv/00000000-0000-0000-0000-000000000001
+Accept: application/json
+
+###
+
+POST {{ConversationalCVBuilder.Api_HostAddress}}/api/cv/generate
+Content-Type: application/json
+
+{
+  "cvProfileId": "00000000-0000-0000-0000-000000000001"
+}
+
+###
+
+POST {{ConversationalCVBuilder.Api_HostAddress}}/api/export/pdf
+Content-Type: application/json
+
+{
+  "templateKey": "classic"
+}
+
+###
+
+POST {{ConversationalCVBuilder.Api_HostAddress}}/api/export/docx
+Content-Type: application/json
+
+{
+  "templateKey": "classic"
+}
+
+###
+
+GET {{ConversationalCVBuilder.Api_HostAddress}}/api/templates
+Accept: application/json
