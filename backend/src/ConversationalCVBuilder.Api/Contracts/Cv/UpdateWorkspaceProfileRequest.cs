@@ -46,4 +46,7 @@ public sealed record UpdateWorkspaceProfileRequest
 
     [Required, MaxLength(30)]
     public IReadOnlyList<string> Achievements { get; init; } = [];
+
+    [Required, MaxLength(20)]
+    public IReadOnlyList<string> AdditionalInformation { get; init; } = [];
 }

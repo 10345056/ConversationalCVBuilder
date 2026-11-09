@@ -1,8 +1,10 @@
 using System.Text;
 using ConversationalCVBuilder.Application.Abstractions;
 using DocumentFormat.OpenXml.Packaging;
+using DocumentFormat.OpenXml.Wordprocessing;
 using UglyToad.PdfPig;
 using UglyToad.PdfPig.Core;
+using UglyToad.PdfPig.DocumentLayoutAnalysis.TextExtractor;
 
 namespace ConversationalCVBuilder.Infrastructure.Services;
 
@@ -10,7 +12,7 @@ public sealed class DocumentParserService : IDocumentParserService, IDocumentTex
 {
     private const int MaximumDocumentSizeBytes = 10 * 1024 * 1024;
     private static readonly HashSet<string> SupportedExtensions = new(
-        [".pdf", ".docx", ".pptx"],
+        [".pdf", ".docx", ".pptx", ".txt"],
         StringComparer.OrdinalIgnoreCase);
     public string ExtractText(Stream fileStream, string extension)
     {
@@ -79,7 +81,7 @@ public sealed class DocumentParserService : IDocumentParserService, IDocumentTex
     {
         if (!SupportedExtensions.Contains(extension))
         {
-            throw new InvalidDataException("Only PDF, DOCX, and PPTX files are supported.");
+            throw new InvalidDataException("Only PDF, DOCX, PPTX, and TXT files are supported.");
         }
     }
 
@@ -91,8 +93,15 @@ public sealed class DocumentParserService : IDocumentParserService, IDocumentTex
             ".pdf" => ExtractPdf(stream),
             ".docx" => ExtractWord(stream),
             ".pptx" => ExtractPresentation(stream),
-            _ => throw new InvalidDataException("Only PDF, DOCX, and PPTX files are supported.")
+            ".txt" => ExtractPlainText(stream),
+            _ => throw new InvalidDataException("Only PDF, DOCX, PPTX, and TXT files are supported.")
         };
+    }
+
+    private static string ExtractPlainText(Stream stream)
+    {
+        using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true, leaveOpen: true);
+        return reader.ReadToEnd();
     }
 
     private static string ExtractPdf(Stream stream)
@@ -100,9 +109,17 @@ public sealed class DocumentParserService : IDocumentParserService, IDocumentTex
         try
         {
             using var document = PdfDocument.Open(stream);
-            return string.Join(Environment.NewLine, document.GetPages().Select(page => page.Text));
+            return string.Join(
+                Environment.NewLine,
+                document.GetPages()
+                    .Select(page => ContentOrderTextExtractor.GetText(page, addDoubleNewline: true))
+                    .Where(pageText => !string.IsNullOrWhiteSpace(pageText)));
         }
         catch (PdfDocumentFormatException exception)
+        {
+            throw new InvalidDataException("The uploaded PDF file is invalid or unreadable.", exception);
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
         {
             throw new InvalidDataException("The uploaded PDF file is invalid or unreadable.", exception);
         }
@@ -113,13 +130,23 @@ public sealed class DocumentParserService : IDocumentParserService, IDocumentTex
         try
         {
             using var document = WordprocessingDocument.Open(stream, false);
-            return document.MainDocumentPart?.Document?.Body?.InnerText ?? string.Empty;
+            return string.Join(
+                Environment.NewLine,
+                document.MainDocumentPart?.Document?.Body?
+                    .Descendants<Paragraph>()
+                    .Select(paragraph => paragraph.InnerText.Trim())
+                    .Where(paragraph => !string.IsNullOrWhiteSpace(paragraph))
+                ?? []);
         }
         catch (OpenXmlPackageException exception)
         {
             throw new InvalidDataException("The uploaded DOCX file is invalid or unreadable.", exception);
         }
         catch (FileFormatException exception)
+        {
+            throw new InvalidDataException("The uploaded DOCX file is invalid or unreadable.", exception);
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
         {
             throw new InvalidDataException("The uploaded DOCX file is invalid or unreadable.", exception);
         }
@@ -156,6 +183,10 @@ public sealed class DocumentParserService : IDocumentParserService, IDocumentTex
             throw new InvalidDataException("The uploaded PPTX file is invalid or unreadable.", exception);
         }
         catch (FileFormatException exception)
+        {
+            throw new InvalidDataException("The uploaded PPTX file is invalid or unreadable.", exception);
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
         {
             throw new InvalidDataException("The uploaded PPTX file is invalid or unreadable.", exception);
         }

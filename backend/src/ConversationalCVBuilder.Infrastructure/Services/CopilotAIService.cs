@@ -1,6 +1,8 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
+using System.Diagnostics;
+using System.Text;
 using ConversationalCVBuilder.Application.Abstractions;
 using ConversationalCVBuilder.Application.Contracts;
 using ConversationalCVBuilder.Infrastructure.Prompts;
@@ -45,7 +47,7 @@ public sealed class CopilotAIService(
         {
             logger.LogError("Copilot extraction did not identify a candidate name.");
             return AiResult<CvAiAnalysis>.Failure(
-                "The resume did not provide a recognizable name. Extracted text is available for manual editing.");
+                "Some profile details could not be confirmed. Your information is preserved for review.");
         }
 
         return result;
@@ -84,7 +86,7 @@ public sealed class CopilotAIService(
         {
             logger.LogError("Copilot CV optimization returned no candidate name.");
             return AiResult<CvAiAnalysis>.Failure(
-                "AI validation returned an incomplete profile. Your information is preserved for manual editing.");
+                "Some profile details could not be confirmed. Your information is preserved for review.");
         }
 
         return result;
@@ -127,7 +129,7 @@ public sealed class CopilotAIService(
         {
             logger.LogError("Copilot conversation returned no candidate name.");
             return AiResult<CvAiConversationResponse>.Failure(
-                "AI assistance returned an incomplete profile. Your information is preserved for manual editing.");
+                "Some profile details could not be confirmed. Your information is preserved for review.");
         }
 
         var response = result.Value with
@@ -137,7 +139,7 @@ public sealed class CopilotAIService(
         if (string.IsNullOrWhiteSpace(response.Reply))
         {
             return AiResult<CvAiConversationResponse>.Failure(
-                "The AI assistant returned an incomplete response. Your message is still available for manual editing.");
+                "Your update could not be confirmed. Please review your CV details and try again.");
         }
 
         return AiResult<CvAiConversationResponse>.Success(Normalize(response));
@@ -153,9 +155,10 @@ public sealed class CopilotAIService(
         {
             logger.LogError("Copilot model or timeout configuration is invalid.");
             return AiResult<T>.Failure(
-                "Copilot is not configured correctly. Your extracted information is available and can be edited manually.");
+                "Your CV could not be updated at this time. Your information is preserved for review.");
         }
 
+        var stopwatch = Stopwatch.StartNew();
         try
         {
             var client = await GetClientAsync(cancellationToken);
@@ -174,7 +177,7 @@ public sealed class CopilotAIService(
             {
                 logger.LogError("Copilot returned an empty CV response.");
                 return AiResult<T>.Failure(
-                    "Copilot returned an empty response. Your information is preserved for manual editing.");
+                    "Your CV could not be updated at this time. Your information is preserved for review.");
             }
 
             var value = JsonSerializer.Deserialize<T>(StripJsonMarkdown(content), JsonOptions);
@@ -182,7 +185,7 @@ public sealed class CopilotAIService(
             {
                 logger.LogError("Copilot returned an invalid structured CV response.");
                 return AiResult<T>.Failure(
-                    "Copilot returned an invalid response. Your information is preserved for manual editing.");
+                    "Your CV could not be updated at this time. Your information is preserved for review.");
             }
 
             return AiResult<T>.Success(Normalize(value));
@@ -191,7 +194,7 @@ public sealed class CopilotAIService(
         {
             logger.LogError("Copilot request timed out.");
             return AiResult<T>.Failure(
-                "Copilot timed out. Your information is preserved for manual editing.");
+                "Your CV update is taking longer than expected. Your information is preserved for review.");
         }
         catch (Exception exception) when (exception is IOException
             or InvalidOperationException
@@ -200,13 +203,27 @@ public sealed class CopilotAIService(
         {
             logger.LogError(exception, "Copilot CLI request failed. Check Copilot CLI authentication and availability.");
             return AiResult<T>.Failure(
-                "Copilot is unavailable or not signed in. Run the Copilot CLI and sign in, then try again. Your information is preserved for manual editing.");
+                "Your CV could not be updated at this time. Your information is preserved for review.");
         }
         catch (JsonException exception)
         {
             logger.LogError(exception, "Copilot returned an invalid JSON response.");
             return AiResult<T>.Failure(
-                "Copilot returned an invalid response. Your information is preserved for manual editing.");
+                "Your CV could not be updated at this time. Your information is preserved for review.");
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException and not OutOfMemoryException)
+        {
+            logger.LogError(exception, "Copilot request failed unexpectedly; the local CV draft will be preserved.");
+            return AiResult<T>.Failure(
+                "Your CV could not be updated at this time. Your information is preserved for review.");
+        }
+        finally
+        {
+            stopwatch.Stop();
+            logger.LogInformation(
+                "Copilot request payload was {PayloadSizeBytes} bytes; response time was {ElapsedMilliseconds} ms",
+                Encoding.UTF8.GetByteCount(prompt),
+                stopwatch.ElapsedMilliseconds);
         }
     }
 
@@ -276,6 +293,7 @@ public sealed class CopilotAIService(
             Education = LimitItems(profile.Education, 3000, 20),
             Languages = LimitItems(profile.Languages, 100, 20),
             Achievements = LimitItems(profile.Achievements, 500, 30),
+            AdditionalInformation = LimitItems(profile.AdditionalInformation, 1000, 20),
         };
 
         var normalized = value with
@@ -335,7 +353,7 @@ public sealed class CopilotAIService(
     }
 
     private const string JsonContract =
-        "Return a JSON object with profile { fullName, targetRole, email, phone, location, linkedIn, summary, skills, certifications, experience, projects, education, languages, achievements }, missingFields (string array), nextQuestion (string), suggestedImprovements (string array), and templateRecommendation (classic, modern, or creative). Every collection must contain plain strings, never objects.";
+        "Return a JSON object with profile { fullName, targetRole, email, phone, location, linkedIn, summary, skills, certifications, experience, projects, education, languages, achievements, additionalInformation }, missingFields (string array), nextQuestion (string), suggestedImprovements (string array), and templateRecommendation (classic, modern, or creative). Every collection must contain plain strings, never objects.";
 
     private static JsonSerializerOptions CreateJsonOptions()
     {

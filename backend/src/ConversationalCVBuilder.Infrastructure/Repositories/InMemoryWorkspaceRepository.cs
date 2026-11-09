@@ -5,7 +5,10 @@ namespace ConversationalCVBuilder.Infrastructure.Repositories;
 
 public sealed class InMemoryWorkspaceRepository : IWorkspaceRepository
 {
-    private readonly Workspace _workspace = new();
+    private Workspace _workspace = new();
 
-    public Workspace Get() => _workspace;
+    public Workspace Get() => Volatile.Read(ref _workspace);
+
+    public Workspace StartNewSession() =>
+        Interlocked.Exchange(ref _workspace, new Workspace());
 }

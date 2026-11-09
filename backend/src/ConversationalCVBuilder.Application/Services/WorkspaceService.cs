@@ -38,7 +38,8 @@ public sealed class WorkspaceService(IWorkspaceRepository repository)
         IReadOnlyList<string> certifications,
         IReadOnlyList<string> projects,
         IReadOnlyList<string> languages,
-        IReadOnlyList<string> achievements)
+        IReadOnlyList<string> achievements,
+        IReadOnlyList<string>? additionalInformation = null)
     {
         var profile = repository.Get().Profile;
         var nameParts = fullName.Trim().Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
@@ -113,6 +114,7 @@ public sealed class WorkspaceService(IWorkspaceRepository repository)
         }
 
         profile.ReplaceAchievements((achievements ?? []).Where(item => !string.IsNullOrWhiteSpace(item)));
+        profile.ReplaceAdditionalInformation(additionalInformation ?? []);
         var workspace = repository.Get();
         workspace.SetCurrentStep("complete");
         return workspace;
@@ -135,7 +137,8 @@ public sealed class WorkspaceService(IWorkspaceRepository repository)
             profile.Certifications,
             profile.Projects,
             profile.Languages,
-            profile.Achievements);
+            profile.Achievements,
+            profile.AdditionalInformation);
     }
 
     public CvAiProfile GetAiProfile()
@@ -157,6 +160,7 @@ public sealed class WorkspaceService(IWorkspaceRepository repository)
             Projects = profile.ProjectSummaries,
             Languages = profile.LanguageLabels,
             Achievements = profile.Achievements,
+            AdditionalInformation = profile.AdditionalInformation,
         };
     }
 

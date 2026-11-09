@@ -24,6 +24,11 @@ public sealed class WorkspaceController(
     [ProducesResponseType<Workspace>(StatusCodes.Status200OK)]
     public ActionResult<Workspace> Get() => Ok(workspaceRepository.Get());
 
+    [HttpPost("new-session")]
+    [ProducesResponseType<Workspace>(StatusCodes.Status200OK)]
+    public ActionResult<Workspace> StartNewSession() =>
+        Ok(workspaceRepository.StartNewSession());
+
     [HttpPost("messages")]
     [ProducesResponseType<Workspace>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -44,6 +49,34 @@ public sealed class WorkspaceController(
     {
         var workspace = await sender.Send(new SelectTemplateCommand(request.TemplateId), cancellationToken);
         return Ok(workspace);
+    }
+
+    [HttpPut("profile/manual")]
+    [ProducesResponseType<Workspace>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    public ActionResult<Workspace> SaveProfile(
+        [FromBody] UpdateWorkspaceProfileRequest request,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        workspaceService.UpdateProfile(
+            request.FullName,
+            request.TargetRole,
+            request.Email,
+            request.Phone,
+            request.Location,
+            request.LinkedIn,
+            request.Summary,
+            request.Skills,
+            request.Experience,
+            request.Education,
+            request.Certifications,
+            request.Projects,
+            request.Languages,
+            request.Achievements,
+            request.AdditionalInformation);
+        workspaceService.SetAiInsights("manual", null);
+        return Ok(workspaceRepository.Get());
     }
 
     [HttpPut("profile")]
@@ -68,7 +101,8 @@ public sealed class WorkspaceController(
             request.Certifications,
             request.Projects,
             request.Languages,
-            request.Achievements);
+            request.Achievements,
+            request.AdditionalInformation);
         var currentWorkspace = workspaceService.Get();
         var conversation = currentWorkspace.Messages
             .Select(message => new AiConversationMessage(message.Role, message.Content))
@@ -93,7 +127,7 @@ public sealed class WorkspaceController(
         else
         {
             var error = result.Error
-                ?? "The AI could not validate the generated profile. Your details remain available for manual editing.";
+                ?? "Some profile details could not be confirmed. Your information is preserved for review.";
             workspaceService.SetAiInsights("fallback", error);
         }
 

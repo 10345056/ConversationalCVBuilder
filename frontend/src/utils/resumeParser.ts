@@ -3,49 +3,29 @@ import type { CvProfile, ResumeAnalysisItem } from "../types";
 const sectionPatterns: Record<string, RegExp> = {
   summary: /^(?:(?:professional\s+)?summary|profile|(?:career\s+)?objective|about(?:\s+me)?)$/i,
   skills: /^(?:(?:technical|core|key)\s+)?skills?$/i,
-  experience: /^(?:(?:professional|work)\s+)?(?:experience|employment|work\s+history)$/i,
-  education: /^(?:education|educational\s+qualification|academic\s+background)$/i,
-  certifications: /^(?:(?:trainings?\s*(?:&|and)\s*)?certifications?|licenses?)$/i,
-  projects: /^(?:selected\s+)?projects?$/i,
+  experience: /^(?:(?:professional|work)\s+)?(?:experience|employment|work\s+history|career\s+history|employment\s+history)$/i,
+  education: /^(?:education|educational\s+qualification|educational\s+qualifications|education\s+qualifications|academic\s+background|academic\s+qualifications)$/i,
+  certifications: /^(?:(?:trainings?\s*(?:&|and)\s*)?certifications?|professional\s+certifications|licenses?(?:\s+and\s+certifications)?)$/i,
+  projects: /^(?:(?:(?:selected|key)\s+)?projects?|project\s+experience)$/i,
   languages: /^(?:spoken\s+)?languages?$/i,
-  achievements: /^(?:key\s+)?(?:achievements?|accomplishments?|awards?)$/i,
+  achievements: /^(?:key\s+)?(?:achievements?|accomplishments?|awards?|honors?\s+and\s+awards?)$/i,
+  additionalInformation: /^(?:additional\s+(?:information|details)|other\s+information)$/i,
 };
 
-const sampleProfile: CvProfile = {
-  fullName: "Jordan Davis",
-  targetRole: "Senior Product Designer",
-  email: "jordan.davis@example.com",
-  phone: "+1 415 555 0138",
-  location: "San Francisco, CA",
-  summary:
-    "Customer-focused product designer with 8+ years of experience turning complex challenges into clear, accessible digital experiences. Collaborative leader who connects user research, product strategy, and measurable outcomes.",
-  skills: ["Product strategy", "UX research", "Figma", "Design systems", "Accessibility", "Leadership"],
-  experience: [
-    "Senior Product Designer | Northstar Digital | 2021–Present\nLed discovery and design for customer platforms used by 200,000+ people, improving task completion by 32%.",
-    "Product Designer | Brightworks | 2017–2021\nBuilt a scalable design system and partnered with engineering to launch responsive products across web and mobile.",
-  ],
-  education: ["B.A. Interaction Design | California College of the Arts | 2017"],
-  certifications: ["Certified Professional in Accessibility Core Competencies (CPACC) | IAAP"],
-  projects: ["Customer onboarding redesign | Reduced time to first value by 28% through research-led improvements."],
-  languages: ["English — Native", "Spanish — Professional"],
-  achievements: ["2023 Northstar Customer Impact Award", "Presented design system practices at ProductCon 2022"],
-};
-
-export function parseResumeText(text: string): { profile: CvProfile; usedSampleData: boolean } {
+export function parseResumeText(text: string): { profile: CvProfile } {
   const lines = separateInlineSections(text).split(/\r?\n/).map((line) => line.replace(/\f/g, "").trim()).filter(Boolean);
-  const usableLines = lines.filter((line) => !/^[-_=*•\s]+$/.test(line));
+  const usableLines = lines.filter((line) => !/^[-_=*•\s]+$/.test(line) && !isFormattingNoise(line));
   const sections: Record<string, string[]> = {};
   let activeSection = "";
   const unsectioned: string[] = [];
 
   for (const rawLine of usableLines) {
-    const headingMatch = rawLine.match(/^([^:]{2,60}):\s*(.*)$/);
-    const heading = (headingMatch?.[1] ?? rawLine).replace(/[\s:|–-]+$/, "").trim();
-    const section = Object.entries(sectionPatterns).find(([, pattern]) => pattern.test(heading))?.[0];
+    const heading = matchSectionHeading(rawLine);
+    const section = heading?.section;
     if (section) {
       activeSection = section;
       sections[section] ??= [];
-      if (headingMatch?.[2]) sections[section].push(headingMatch[2].trim());
+      if (heading.remainder) sections[section].push(heading.remainder);
       continue;
     }
 
@@ -97,9 +77,29 @@ export function parseResumeText(text: string): { profile: CvProfile; usedSampleD
   const projects = boundItems(splitEntries(sections.projects ?? []), 5000, 20);
   const languages = boundItems(splitItems((sections.languages ?? []).join("\n")), 100, 20);
   const achievements = boundItems(splitEntries(sections.achievements ?? []), 500, 30);
+  const additionalInformation = boundItems(splitItems((sections.additionalInformation ?? []).join("\n")), 1000, 20);
 
-  const hasUsableContent = Boolean(fullName);
-  if (!hasUsableContent) return { profile: sampleProfile, usedSampleData: true };
+  if (!fullName) {
+    return {
+      profile: {
+        fullName: "",
+        targetRole: "",
+        email: "",
+        phone: "",
+        location: "",
+        linkedIn: "",
+        summary: "",
+        skills: [],
+        experience: [],
+        education: [],
+        certifications: [],
+        projects: [],
+        languages: [],
+        achievements: [],
+        additionalInformation: [],
+      },
+    };
+  }
 
   const fallbackSummary = summary || unsectioned
     .filter((line) => line !== nameFromLines && line !== email && line !== phone && line.length > 70)
@@ -121,8 +121,8 @@ export function parseResumeText(text: string): { profile: CvProfile; usedSampleD
       projects,
       languages,
       achievements,
+      additionalInformation,
     },
-    usedSampleData: false,
   };
 }
 
@@ -137,20 +137,71 @@ export function analyzeProfile(profile: CvProfile): ResumeAnalysisItem[] {
 }
 
 export function calculateCompletion(profile: CvProfile): number {
-  const completeSections = [
-    Boolean(profile.fullName.trim() && (profile.email.trim() || profile.phone.trim())),
-    Boolean(profile.summary.trim()),
-    profile.skills.length > 0,
-    profile.experience.length > 0,
-    profile.education.length > 0,
-    profile.certifications.length > 0,
-  ].filter(Boolean).length;
-  return Math.round((completeSections / 6) * 100);
+  const weightedSections = [
+    { complete: hasProfileContent(profile.fullName) && (hasProfileContent(profile.email) || hasProfileContent(profile.phone)), weight: 10 },
+    { complete: hasProfileContent(profile.summary), weight: 10 },
+    { complete: hasProfileItems(profile.skills), weight: 25 },
+    { complete: hasProfileItems(profile.experience), weight: 25 },
+    { complete: hasProfileItems(profile.achievements), weight: 10 },
+    { complete: hasProfileItems(profile.projects), weight: 10 },
+  ];
+  const supplemental = [
+    hasProfileItems(profile.certifications),
+    hasProfileItems(profile.education),
+    hasProfileItems([...profile.languages, ...profile.additionalInformation]),
+  ];
+  const missingSupplementalPenalty = supplemental.filter((complete) => !complete).length * (5 / 3);
+  const baseScore = weightedSections.reduce(
+    (score, section) => score + (section.complete ? section.weight : 0),
+    0,
+  );
+  const supplementalScore = supplemental.filter(Boolean).length * (10 / 3);
+  return Math.round(Math.max(0, baseScore + supplementalScore - missingSupplementalPenalty));
+}
+
+export function hasProfileContent(value: string): boolean {
+  const normalized = value.trim().toLowerCase();
+  return normalized.length > 0
+    && !/(not provided|add (confirmed|verified|relevant)|add languages or other relevant information|please add|suggested|draft summary|please verify|cv builder user|your name|target role)/i.test(normalized);
+}
+
+export function hasProfileItems(items: string[]): boolean {
+  return items.some(hasProfileContent);
 }
 
 function headingsForLine(line: string): boolean {
-  const normalized = line.replace(/[\s:|–-]+$/, "").trim();
-  return Object.values(sectionPatterns).some((pattern) => pattern.test(normalized));
+  return Boolean(matchSectionHeading(line));
+}
+
+function matchSectionHeading(line: string): { section: string; remainder: string } | undefined {
+  const headingMatch = line.match(/^([^:]{2,60}):\s*(.*)$/);
+  const heading = normalizeHeading((headingMatch?.[1] ?? line).replace(/[\s:|–-]+$/, ""));
+  const exactSection = findSection(heading);
+  if (exactSection) return { section: exactSection, remainder: headingMatch?.[2]?.trim() ?? "" };
+
+  if (!headingMatch) {
+    const suffix = heading.match(/^(.+?)\s+(?:\||—|–|-)\s+(.+)$/);
+    const section = suffix ? findSection(suffix[1]) : undefined;
+    if (section && suffix) return { section, remainder: suffix[2].trim() };
+  }
+  return undefined;
+}
+
+function findSection(heading: string): string | undefined {
+  return Object.entries(sectionPatterns).find(([, pattern]) => pattern.test(heading))?.[0];
+}
+
+function normalizeHeading(value: string): string {
+  return value
+    .replace(/^\s*\d+[\s.)-]+/, "")
+    .replace(/^[#*•\s]+|[#*•\s]+$/g, "")
+    .trim();
+}
+
+function isFormattingNoise(line: string): boolean {
+  return /^(?:[a-z][\w-]*|[.#][\w-]+|[^{}]+)\s*\{\s*$/i.test(line)
+    || /^(?:text-decoration|color|border(?:-[\w-]+)?|background(?:-[\w-]+)?|font(?:-[\w-]+)?|padding(?:-[\w-]+)?|margin(?:-[\w-]+)?|display|width|height|align-items)\s*:/i.test(line)
+    || /^(?:[{}]|<\/?style\b)/i.test(line);
 }
 
 function cleanContact(value: string): string {
@@ -189,6 +240,7 @@ function normalizeParagraph(value: string): string {
 function separateInlineSections(text: string): string {
   const headings = [
     "career objective",
+    "career history",
     "professional summary",
     "professional experience",
     "work experience",
@@ -199,10 +251,13 @@ function separateInlineSections(text: string): string {
     "skills",
     "projects?",
     "educational qualification",
+    "academic qualifications",
+    "key projects",
     "education",
     "languages",
     "achievements?",
     "awards?",
+    "additional information",
   ].join("|");
   return text.replace(
     new RegExp(`(?:(?<=[.!?])\\s+|\\s{2,})(?=(?:${headings})\\s*:)`, "gi"),

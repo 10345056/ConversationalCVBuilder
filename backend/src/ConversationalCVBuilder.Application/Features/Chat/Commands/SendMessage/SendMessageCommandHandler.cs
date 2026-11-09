@@ -46,7 +46,7 @@ public sealed class SendMessageCommandHandler(
         }
 
         var error = result.Error
-            ?? "AI assistance is temporarily unavailable. Your response is still available for manual editing.";
+            ?? "Your update could not be confirmed. Please review your CV details and try again.";
         workspaceService.SetAiInsights("fallback", error);
         return conversationService.Send(request.Message, error);
     }

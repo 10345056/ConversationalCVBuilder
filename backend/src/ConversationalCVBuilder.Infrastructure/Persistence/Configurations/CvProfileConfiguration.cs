@@ -16,6 +16,10 @@ public sealed class CvProfileConfiguration : IEntityTypeConfiguration<CvProfile>
         builder.Property(profile => profile.Title).HasField("_title").UsePropertyAccessMode(PropertyAccessMode.Field).HasMaxLength(120).IsRequired();
         builder.Property(profile => profile.TargetRole).HasField("_targetRole").UsePropertyAccessMode(PropertyAccessMode.Field).HasMaxLength(160).IsRequired();
         builder.Property(profile => profile.Summary).HasField("_summary").UsePropertyAccessMode(PropertyAccessMode.Field).HasMaxLength(5000).IsRequired();
+        builder.Property<string>("_additionalInformation")
+            .HasColumnName("AdditionalInformation")
+            .HasMaxLength(5000)
+            .IsRequired();
         builder.Property(profile => profile.CompletedAtUtc)
             .HasConversion(
                 value => value.HasValue ? value.Value.ToString("O") : null,
@@ -43,6 +47,7 @@ public sealed class CvProfileConfiguration : IEntityTypeConfiguration<CvProfile>
         builder.Ignore(profile => profile.ProjectSummaries);
         builder.Ignore(profile => profile.LanguageLabels);
         builder.Ignore(profile => profile.Achievements);
+        builder.Ignore(profile => profile.AdditionalInformation);
 
         builder.HasOne(profile => profile.Owner)
             .WithMany(user => user.CvProfiles)

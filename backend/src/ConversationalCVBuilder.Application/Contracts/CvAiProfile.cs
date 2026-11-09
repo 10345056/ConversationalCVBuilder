@@ -16,6 +16,7 @@ public sealed record CvAiProfile
     public IReadOnlyList<string> Education { get; init; } = [];
     public IReadOnlyList<string> Languages { get; init; } = [];
     public IReadOnlyList<string> Achievements { get; init; } = [];
+    public IReadOnlyList<string> AdditionalInformation { get; init; } = [];
 
     public CvAiProfile WithFallback(CvAiProfile fallback) => this with
     {
@@ -33,6 +34,7 @@ public sealed record CvAiProfile
         Education = Merge(Education, fallback.Education),
         Languages = Merge(Languages, fallback.Languages),
         Achievements = Merge(Achievements, fallback.Achievements),
+        AdditionalInformation = Merge(AdditionalInformation, fallback.AdditionalInformation),
     };
 
     private static string Use(string value, string fallback) =>

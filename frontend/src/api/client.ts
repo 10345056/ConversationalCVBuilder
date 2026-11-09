@@ -5,23 +5,18 @@ const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "";
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${apiBaseUrl}${path}`, init);
   if (!response.ok) {
-    const body = await response.text();
-    let message = body;
-    if (body) {
-      try {
-        const parsed = JSON.parse(body) as { error?: string; title?: string };
-        message = parsed.error ?? parsed.title ?? body;
-      } catch (error) {
-        if (!(error instanceof SyntaxError)) throw error;
-      }
-    }
-    throw new Error(message || `Request failed (${response.status}).`);
+    throw new Error("We couldn't complete your request. Please try again.");
   }
   return response.json() as Promise<T>;
 }
 
 export const getWorkspace = async () =>
   normalizeWorkspace(await request<Workspace>("/api/workspace"));
+
+export const startNewSession = async () =>
+  normalizeWorkspace(await request<Workspace>("/api/workspace/new-session", {
+    method: "POST",
+  }));
 
 export const sendMessage = async (message: string) =>
   normalizeWorkspace(await request<Workspace>("/api/workspace/messages", {
@@ -39,6 +34,15 @@ export const selectTemplate = async (templateId: string) =>
 
 export async function updateWorkspaceProfile(profile: CvProfile): Promise<Workspace> {
   const workspace = await request<Workspace>("/api/workspace/profile", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(profile),
+  });
+  return normalizeWorkspace(workspace);
+}
+
+export async function saveWorkspaceProfile(profile: CvProfile): Promise<Workspace> {
+  const workspace = await request<Workspace>("/api/workspace/profile/manual", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(profile),
@@ -70,8 +74,7 @@ async function downloadExport(format: "pdf" | "docx", templateId: string): Promi
     body: JSON.stringify({ templateKey: templateId }),
   });
   if (!response.ok) {
-    const body = await response.text();
-    throw new Error(body || `${format.toUpperCase()} export failed (${response.status}).`);
+    throw new Error("Your CV could not be exported. Please try again.");
   }
 
   const url = URL.createObjectURL(await response.blob());
@@ -101,6 +104,7 @@ function normalizeWorkspace(workspace: Workspace): Workspace {
       projects: profile.projects ?? profile.projectSummaries ?? [],
       languages: profile.languages ?? profile.languageLabels ?? [],
       achievements: profile.achievements ?? [],
+      additionalInformation: profile.additionalInformation ?? [],
       linkedIn: profile.linkedIn ?? "",
     },
   };

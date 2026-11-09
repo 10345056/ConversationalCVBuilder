@@ -60,10 +60,12 @@ The Vite development server proxies `/api` requests to the HTTPS API, so the bro
 
 ## API endpoints
 
-- `POST /api/documents/parse` — multipart form upload (`file`) for PDF, DOCX, or PPTX; returns extracted text and AI extraction status.
+- `POST /api/documents/parse` — multipart form upload (`file`) for PDF, DOCX, PPTX, or TXT; returns extracted text, extraction status, and diagnostics. Unreadable or image-only documents return a partial result and a reviewable local draft rather than an extraction-related HTTP 400.
 - `GET /api/workspace` — current CV profile, conversation, uploaded text, and AI analysis.
+- `POST /api/workspace/new-session` — resets the in-memory workspace and starts a clean CV session. The frontend calls this on page load and provides a **Start new session** button.
 - `POST /api/workspace/messages` — JSON `{ "message": "..." }`; continues the context-aware CV conversation.
 - `PUT /api/workspace/profile` — validates and enhances the supplied CV profile with Copilot when configured.
+- `PUT /api/workspace/profile/manual` — saves edits made directly in the CV preview without running profile enhancement.
 - `POST /api/export/pdf` and `POST /api/export/docx` — optional JSON `{ "templateKey": "classic" }`; returns a branded file.
 - `GET /api/workspace/templates` — list available templates.
 
@@ -71,7 +73,7 @@ The `.http` file in the API project contains request examples.
 
 The SQLite database defaults to `conversational-cv-builder.db` in the API working directory. Generate and apply EF Core migrations before using the persisted repositories; database creation is not automatically forced at application startup.
 
-CV extraction, gap analysis, conversation, and CV enhancement use the official GitHub Copilot .NET SDK and the locally signed-in Copilot CLI account. The SDK's bundled Copilot runtime starts on first AI use. Sign in with `copilot login` or authenticate the GitHub CLI with `gh auth login` before starting the API. The app uses `Model: auto` for Copilot Free compatibility, which chooses from models available to that account. Copilot Free has limited AI access and credits, so requests may become unavailable after its allowance is used. No API key is required. If the CLI is unavailable, unauthenticated, or out of quota, the API preserves extracted/manual profile data and supports manual editing.
+AI enhancement runs when you select **Generate NTT CV** and uses the official GitHub Copilot .NET SDK and the locally signed-in Copilot CLI account. Uploading alone creates a local draft without spending Copilot credits. If Copilot is unavailable or out of quota, the app keeps the draft; inferred role content and sample project ideas are explicitly marked for review and should be replaced or confirmed before sharing. The local fallback does not invent employers, dates, certifications, or measured achievements.
 
 This integration is intended for the existing local, single-user workspace. Do not expose this backend as a shared service: it uses the host's signed-in Copilot account and local CLI credentials. The API's development CORS policy permits `http://localhost:5173`.
 
@@ -90,7 +92,8 @@ The backend stores its SQLite database under `/data`; Compose mounts the named `
 ## MVP features
 
 - Responsive three-panel workspace: document upload, guided chat, and live CV preview.
-- PDF, DOCX, and PPTX text extraction (10 MB upload limit), with Copilot-powered structured CV extraction and gap analysis.
+- PDF, DOCX, PPTX, and TXT text extraction (10 MB upload limit), with a local reviewable draft and optional Copilot-powered CV refinement.
+- NTT DATA CV preview and ATS-friendly PDF/DOCX exports with consistent sections, bullet formatting, profile completeness, and a generated-content review notice.
 - Context-aware CV conversation, one-at-a-time follow-up questions, manual editing, and AI-assisted CV enhancement.
 - Classic, Modern, and Creative preview templates.
 - NTT DATA-branded DOCX, PDF, and JSON exports from the API, including logo, generated date, and page numbers.

@@ -46,6 +46,11 @@ public sealed class ExceptionHandlingMiddleware(
                 logger.LogError(exception, "Unhandled exception processing {Method} {Path}",
                     context.Request.Method, context.Request.Path);
             }
+            else
+            {
+                logger.LogWarning(exception, "Request failed with {StatusCode} for {Method} {Path}",
+                    statusCode, context.Request.Method, context.Request.Path);
+            }
 
             context.Response.Clear();
             context.Response.StatusCode = statusCode;

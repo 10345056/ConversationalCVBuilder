@@ -13,6 +13,7 @@ public sealed class CvProfile : AggregateRoot, IDomainEventSource
     private readonly List<Education> _education = [];
     private readonly List<string> _achievements = [];
     private readonly List<Language> _languages = [];
+    private string _additionalInformation = string.Empty;
     private readonly List<Project> _projects = [];
     private readonly List<Skill> _skills = [];
     private readonly List<WorkExperience> _workExperiences = [];
@@ -102,6 +103,20 @@ public sealed class CvProfile : AggregateRoot, IDomainEventSource
         .Select(item => $"{item.Name} — {item.Proficiency}")
         .ToArray();
     public IReadOnlyList<string> Achievements => _achievements.AsReadOnly();
+    public IReadOnlyList<string> AdditionalInformation => _additionalInformation
+        .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+    public void ReplaceAdditionalInformation(IEnumerable<string> items, Guid? actorId = null)
+    {
+        ArgumentNullException.ThrowIfNull(items);
+        var normalized = items
+            .Where(item => !string.IsNullOrWhiteSpace(item))
+            .Select(item => RequiredText(item, nameof(items), 1000))
+            .Distinct(StringComparer.OrdinalIgnoreCase);
+        var value = string.Join('\n', normalized);
+        _additionalInformation = value.Length <= 5000 ? value : value[..5000];
+        Touch("additionalInformation", actorId);
+    }
 
     public void ReplaceAchievements(IEnumerable<string> achievements, Guid? actorId = null)
     {
@@ -189,7 +204,7 @@ public sealed class CvProfile : AggregateRoot, IDomainEventSource
     {
         var normalized = RequiredText(narrative, nameof(narrative), 5000);
         return AddWorkExperience(
-            normalized,
+            normalized.Length <= 160 ? normalized : "Work experience details",
             description: normalized,
             actorId: actorId);
     }

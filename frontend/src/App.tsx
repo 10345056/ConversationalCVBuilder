@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
+  Button,
   MessageBar,
   MessageBarBody,
   Text,
@@ -13,12 +14,14 @@ import {
   downloadDocx,
   getWorkspace,
   sendMessage,
+  saveWorkspaceProfile,
+  startNewSession,
   updateWorkspaceProfile,
 } from "./api/client";
 import ConversationPanel from "./components/ConversationPanel";
 import CvPreview from "./components/CvPreview";
 import UploadPanel from "./components/UploadPanel";
-import { parseResumeText } from "./utils/resumeParser";
+import { hasProfileContent, hasProfileItems, parseResumeText } from "./utils/resumeParser";
 import type { ResumeAnalysisItem, Workspace } from "./types";
 
 const useStyles = makeStyles({
@@ -37,29 +40,48 @@ export default function App() {
   const [hasEntered, setHasEntered] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [exporting, setExporting] = useState(false);
-  const [usedSampleData, setUsedSampleData] = useState(false);
+  const [startingNewSession, setStartingNewSession] = useState(false);
   const [fallbackFileName, setFallbackFileName] = useState("");
+  const [sessionKey, setSessionKey] = useState(0);
+  const [draftReady, setDraftReady] = useState(false);
+  const [savingProfile, setSavingProfile] = useState(false);
 
   const refreshWorkspace = useCallback(async () => {
     setWorkspace(await getWorkspace());
   }, []);
 
   useEffect(() => {
-    void refreshWorkspace()
+    void startNewSession()
+      .then(setWorkspace)
       .catch((cause: unknown) => {
         setError(cause instanceof TypeError
-          ? "Could not connect to the API. Make sure it is running at https://localhost:5001."
-          : cause instanceof Error ? cause.message : "Could not load the workspace.");
+            ? "The CV workspace is temporarily unavailable. Please try again shortly."
+            : "The CV workspace could not be opened. Please try again.");
       })
       .finally(() => setLoading(false));
-  }, [refreshWorkspace]);
+  }, []);
+
+  async function handleStartNewSession() {
+    setError("");
+    setStartingNewSession(true);
+    try {
+      setWorkspace(await startNewSession());
+      setFallbackFileName("");
+      setDraftReady(false);
+      setSessionKey((current) => current + 1);
+    } catch {
+      setError("A new CV could not be started. Please try again.");
+    } finally {
+      setStartingNewSession(false);
+    }
+  }
 
   async function handleSend(message: string) {
     try {
       setError("");
       setWorkspace(await sendMessage(message));
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "The message could not be sent.");
+    } catch {
+      setError("Your CV details could not be saved. Please try again.");
     }
   }
 
@@ -70,7 +92,7 @@ export default function App() {
     setGenerating(true);
     try {
       const sourceText = fallbackFileName ? "" : workspace.sourceText;
-      const { profile: parsedProfile, usedSampleData: usedFallback } = parseResumeText(sourceText);
+      const { profile: parsedProfile } = parseResumeText(sourceText);
       const currentProfile = workspace.profile.fullName.trim()
         && workspace.profile.fullName !== "CV Builder User"
         ? workspace.profile
@@ -78,30 +100,28 @@ export default function App() {
       const profile = mergeProfiles(currentProfile, parsedProfile);
       const updatedWorkspace = await updateWorkspaceProfile(profile);
       setWorkspace({ ...updatedWorkspace, uploadedDocumentName: fileName, sourceText });
-      setUsedSampleData(
-        !["success", "optimized"].includes(workspace.aiStatus) &&
-        workspace.currentStep !== "complete" &&
-        usedFallback,
-      );
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "The NTT CV could not be generated.");
+      setDraftReady(true);
+    } catch {
+      setError("Your CV draft could not be prepared. Please try again.");
     } finally {
       setGenerating(false);
     }
   }
 
-  async function handleAskMissingQuestions() {
-    if (!workspace) return;
-    const missing = getWorkspaceAnalysis(workspace, Boolean(fallbackFileName))
-      .filter((item) => !item.found)
-      .map((item) => item.label.toLowerCase());
-    if (missing.length === 0 && !workspace.aiNextQuestion) return;
-    const focus = workspace.aiMissingFields.length
-      ? workspace.aiMissingFields.join(", ")
-      : missing.length > 0
-        ? missing.join(", ")
-        : workspace.aiNextQuestion;
-    await handleSend(`Continue the CV gap analysis. Ask me one focused question about ${focus}. Ask only one question and do not repeat any previous question.`);
+  async function handleSaveProfile(profile: Workspace["profile"]): Promise<boolean> {
+    setError("");
+    setSavingProfile(true);
+    try {
+      const updatedWorkspace = await saveWorkspaceProfile(profile);
+      setWorkspace(updatedWorkspace);
+      setDraftReady(true);
+      return true;
+    } catch {
+      setError("Your CV changes could not be saved. Please try again.");
+      return false;
+    } finally {
+      setSavingProfile(false);
+    }
   }
 
   async function handleExportDocx() {
@@ -109,8 +129,8 @@ export default function App() {
       setError("");
       setExporting(true);
       await downloadDocx(workspace?.selectedTemplateId ?? "classic");
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "DOCX export failed.");
+    } catch {
+      setError("Your Word document could not be exported. Please try again.");
     } finally {
       setExporting(false);
     }
@@ -121,8 +141,8 @@ export default function App() {
       setError("");
       setExporting(true);
       await downloadPdf(workspace?.selectedTemplateId ?? "classic");
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "PDF export failed.");
+    } catch {
+      setError("Your PDF could not be exported. Please try again.");
     } finally {
       setExporting(false);
     }
@@ -148,24 +168,33 @@ export default function App() {
         <div className="brand">
           <img className="app-brand-logo" src="/assets/ntt-logo.png" alt="NTT DATA" />
           <div>
-            <Text className="brand-subtitle" size={200}>Conversational CV Builder</Text>
+            <Text className="brand-subtitle" size={200}>Professional CV Builder</Text>
           </div>
         </div>
         <div className="header-note">
           <span className="online-dot" />
-          <Text size={200}>Your next chapter starts here</Text>
+          <Text size={200}>NTT DATA Professional CV</Text>
         </div>
+        <Button
+          appearance="secondary"
+          size="small"
+          className="new-session-button"
+          disabled={loading || startingNewSession || generating || exporting}
+          onClick={() => void handleStartNewSession()}
+        >
+          {startingNewSession ? "Starting…" : "Start new session"}
+        </Button>
       </header>
 
       <main className="workspace">
         <div className="workspace-intro">
           <div>
-            <Text as="h1" size={700} weight="bold">Create a CV that feels like you.</Text>
+            <Text as="h1" size={700} weight="bold">Create your professional CV.</Text>
             <Text className="muted-text" size={300}>
-              Share your story, shape your draft, and make it yours.
+                Organize your experience into a clear, professional format.
             </Text>
           </div>
-          <div className="step-count"><span>01</span> / 03 <span className="step-label">Build · Refine · Export</span></div>
+            <div className="step-count"><span>01</span> / 03 <span className="step-label">Prepare · Review · Export</span></div>
         </div>
 
         {error && (
@@ -173,44 +202,47 @@ export default function App() {
             <MessageBarBody>{error}</MessageBarBody>
           </MessageBar>
         )}
-        {usedSampleData && workspace?.sourceText.trim() && (
-          <MessageBar intent="warning" className="app-error">
+        {draftReady && (
+          <MessageBar intent="success" className="app-success">
             <MessageBarBody>
-              The uploaded text did not contain a recognizable candidate name, so sample CV data is shown in the preview.
+              <Text weight="semibold">CV Draft Ready</Text>
+              <br />
+              Your resume has been processed successfully and the live preview has been updated. Review the generated content and make any required changes before exporting.
             </MessageBarBody>
           </MessageBar>
         )}
-
         {workspace ? (
           <section className="three-panel-layout" aria-label="CV builder workspace">
             <aside className="upload-column" aria-label="Upload section">
               <UploadPanel
+                key={sessionKey}
                 fileName={fallbackFileName || workspace.uploadedDocumentName}
-                extractionFailed={Boolean(fallbackFileName)}
-                sourceText={fallbackFileName ? "" : workspace.sourceText}
                 analysis={getWorkspaceAnalysis(workspace, Boolean(fallbackFileName))}
-                aiStatus={workspace.aiStatus}
-                aiError={workspace.aiError}
-                aiNextQuestion={workspace.aiNextQuestion}
-                suggestedImprovements={workspace.aiSuggestedImprovements}
+                targetRole={workspace.profile.targetRole}
+                draftReady={draftReady}
                 generating={generating}
                 onUploaded={async () => {
                   setFallbackFileName("");
-                  setUsedSampleData(false);
+                  setDraftReady(false);
                   await refreshWorkspace();
                 }}
                 onError={setError}
-                onExtractionFailed={setFallbackFileName}
+                onExtractionFailed={(fileName) => {
+                  setFallbackFileName(fileName);
+                  setDraftReady(false);
+                }}
                 onGenerate={() => void handleGenerateCv()}
-                onAskMissingQuestions={() => void handleAskMissingQuestions()}
               />
             </aside>
 
-            <section className="conversation-column" aria-label="Conversational chat section">
+            <section className="conversation-column" aria-label="Additional CV details">
               <ConversationPanel
+                key={sessionKey}
                 messages={workspace.messages}
                 disabled={false}
+                profile={workspace.profile}
                 onSend={handleSend}
+                onSaveProfile={handleSaveProfile}
                 onError={setError}
               />
             </section>
@@ -221,19 +253,21 @@ export default function App() {
                 templateId={workspace.selectedTemplateId}
                 onExportDocx={() => void handleExportDocx()}
                 onExportPdf={() => void handleExportPdf()}
-                disabled={exporting || generating}
+                onSave={handleSaveProfile}
+                saving={savingProfile}
+                disabled={exporting || generating || savingProfile}
               />
             </aside>
           </section>
         ) : (
           <div className="connection-state">
             <Text weight="semibold" size={400}>Your workspace is not available yet.</Text>
-            <Text className="muted-text" size={300}>Start the backend API, then refresh this page.</Text>
+            <Text className="muted-text" size={300}>Please refresh the page or try again later.</Text>
           </div>
         )}
       </main>
       <footer className="app-footer">
-        <Text size={200}>Your information stays in this local MVP session.</Text>
+        <Text size={200}>Your information is used to prepare your professional CV.</Text>
       </footer>
       </>
       )}
@@ -245,7 +279,9 @@ export default function App() {
 
 function mergeProfiles(primary: Workspace["profile"], fallback: Workspace["profile"]): Workspace["profile"] {
   const mergeText = (preferred: string | undefined, secondary: string | undefined) =>
-    preferred?.trim() ? preferred : secondary ?? "";
+    preferred?.trim() && preferred !== "Your Name" && preferred !== "Role to confirm"
+      ? preferred
+      : secondary?.trim() || preferred || "";
   const mergeItems = (preferred: string[] | undefined, secondary: string[] | undefined) =>
     [...(preferred ?? []), ...(secondary ?? [])]
       .filter((item, index, values) => item.trim()
@@ -267,6 +303,7 @@ function mergeProfiles(primary: Workspace["profile"], fallback: Workspace["profi
     projects: mergeItems(primary.projects, fallback.projects),
     languages: mergeItems(primary.languages, fallback.languages),
     achievements: mergeItems(primary.achievements, fallback.achievements),
+    additionalInformation: mergeItems(primary.additionalInformation, fallback.additionalInformation),
   };
 }
 
@@ -287,12 +324,14 @@ function getAnalysisProfile(workspace: Workspace, extractionFailed = false) {
       projects: [],
       languages: [],
       achievements: [],
+      additionalInformation: [],
     };
   }
   if (!workspace.uploadedDocumentName) return workspace.profile;
   if (workspace.aiStatus === "success" || workspace.aiStatus === "optimized") {
     return workspace.profile;
   }
+  if (workspace.aiStatus === "fallback") return workspace.profile;
   if (!extractionFailed && workspace.currentStep === "complete") return workspace.profile;
   if (workspace.sourceText.trim()) return parseResumeText(workspace.sourceText).profile;
   if (workspace.profile.fullName !== "CV Builder User") return workspace.profile;
@@ -309,14 +348,14 @@ function getAnalysisProfile(workspace: Workspace, extractionFailed = false) {
 function getWorkspaceAnalysis(workspace: Workspace, extractionFailed = false): ResumeAnalysisItem[] {
   const profile = getAnalysisProfile(workspace, extractionFailed);
   const analysis: ResumeAnalysisItem[] = [
-    { label: "Personal Details", found: Boolean(profile.fullName.trim() && (profile.email.trim() || profile.phone.trim())) },
-    { label: "Summary", found: Boolean(profile.summary.trim()) },
-    { label: "Skills", found: profile.skills.length > 0 },
-    { label: "Experience", found: profile.experience.length > 0 },
-    { label: "Projects", found: profile.projects.length > 0 },
-    { label: "Education", found: profile.education.length > 0 },
-    { label: "Certifications", found: profile.certifications.length > 0 },
-    { label: "Languages", found: profile.languages.length > 0 },
+    { label: "Personal Details", found: hasProfileContent(profile.fullName) && (hasProfileContent(profile.email) || hasProfileContent(profile.phone)) },
+    { label: "Summary", found: hasProfileContent(profile.summary) },
+    { label: "Skills", found: hasProfileItems(profile.skills) },
+    { label: "Experience", found: hasProfileItems(profile.experience) },
+    { label: "Projects", found: hasProfileItems(profile.projects) },
+    { label: "Education", found: hasProfileItems(profile.education) },
+    { label: "Certifications", found: hasProfileItems(profile.certifications) },
+    { label: "Languages", found: hasProfileItems(profile.languages) },
   ];
   if (extractionFailed || !["success", "optimized"].includes(workspace.aiStatus)) return analysis;
 
@@ -393,7 +432,7 @@ function WelcomePage({ onStart }: { onStart: () => void }) {
         </a>
         <div className="welcome-header-status">
           <span className="welcome-status-dot" />
-          AI-powered career storytelling
+          PROFESSIONAL CV PREPARATION
         </div>
       </header>
 
@@ -420,7 +459,7 @@ function WelcomePage({ onStart }: { onStart: () => void }) {
             transition={{ duration: 0.65 }}
           >
             NTT DATA
-            <span className="welcome-title-line">Conversational</span>
+            <span className="welcome-title-line">Professional</span>
             <span className="welcome-title-accent">CV Builder<span className="welcome-period">.</span></span>
           </motion.h1>
           <motion.p
@@ -428,7 +467,7 @@ function WelcomePage({ onStart }: { onStart: () => void }) {
             variants={{ hidden: { opacity: 0, y: 18 }, visible: { opacity: 1, y: 0 } }}
             transition={{ duration: 0.6 }}
           >
-            Create customer-ready resumes with AI assistance.
+            Prepare a clear, consistent CV using the NTT DATA professional format.
           </motion.p>
           <motion.div
             className="welcome-actions"
@@ -445,16 +484,16 @@ function WelcomePage({ onStart }: { onStart: () => void }) {
               <span>Start building</span>
               <span className="welcome-button-arrow" aria-hidden="true">→</span>
             </motion.button>
-            <span className="welcome-action-note">A better CV begins with a conversation</span>
+            <span className="welcome-action-note">A polished CV starts with your experience</span>
           </motion.div>
           <motion.div
             className="welcome-benefits"
             variants={{ hidden: { opacity: 0 }, visible: { opacity: 1 } }}
             transition={{ duration: 0.7 }}
           >
-            <span><i>01</i> Tell your story</span>
-            <span><i>02</i> Shape it with AI</span>
-            <span><i>03</i> Make it yours</span>
+            <span><i>01</i> Add your resume</span>
+            <span><i>02</i> Review your details</span>
+            <span><i>03</i> Export your CV</span>
           </motion.div>
         </motion.div>
 
@@ -480,7 +519,7 @@ function WelcomePage({ onStart }: { onStart: () => void }) {
                 <strong>Jordan Davis</strong>
                 <span>Senior Product Designer</span>
               </div>
-              <span className="preview-ai-badge"><Sparkle20Regular /> AI refined</span>
+              <span className="preview-ai-badge">Review ready</span>
             </div>
             <div className="preview-rule" />
             <div className="preview-section-title">
@@ -505,7 +544,7 @@ function WelcomePage({ onStart }: { onStart: () => void }) {
 
       <footer className="welcome-footer">
         <span>Built for the people behind the possibilities.</span>
-        <span><i /> Thoughtful by design&nbsp; · &nbsp;Powered by AI</span>
+        <span><i /> Professional tools for clear, confident CVs</span>
       </footer>
     </motion.main>
   );

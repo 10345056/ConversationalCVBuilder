@@ -8,7 +8,9 @@ namespace ConversationalCVBuilder.Api.Controllers;
 
 [ApiController]
 [Route("api/upload")]
-public sealed class UploadController(ISender sender) : ControllerBase
+public sealed class UploadController(
+    ISender sender,
+    ILogger<UploadController> logger) : ControllerBase
 {
     private const long MaximumFileSizeBytes = 10 * 1024 * 1024;
 
@@ -24,7 +26,7 @@ public sealed class UploadController(ISender sender) : ControllerBase
         var file = request.File;
         if (file is null || file.Length == 0)
         {
-            ModelState.AddModelError(nameof(request.File), "Choose a non-empty PDF, DOCX, or PPTX file.");
+            ModelState.AddModelError(nameof(request.File), "Choose a non-empty PDF, DOCX, PPTX, or TXT file.");
             return ValidationProblem(ModelState);
         }
 
@@ -34,11 +36,36 @@ public sealed class UploadController(ISender sender) : ControllerBase
             return ValidationProblem(ModelState);
         }
 
+        logger.LogInformation(
+            "Received resume upload {FileName}: {FileSizeBytes} bytes, {ContentType}",
+            Path.GetFileName(file.FileName),
+            file.Length,
+            file.ContentType);
         await using var content = new MemoryStream((int)file.Length);
         await file.CopyToAsync(content, cancellationToken);
         var result = await sender.Send(
             new UploadDocumentCommand(file.FileName, content.ToArray(), file.ContentType),
             cancellationToken);
+        if (result.Status == "partial")
+        {
+            logger.LogWarning(
+                "Resume extraction was partial for {FileName}: {FileSizeBytes} bytes, {ContentType}, {CharacterCount} characters. {Diagnostic}",
+                result.FileName,
+                result.FileSizeBytes,
+                result.ContentType,
+                result.ExtractedCharacterCount,
+                result.AiError ?? result.Message);
+        }
+        else
+        {
+            logger.LogInformation(
+                "Resume extraction succeeded for {FileName}: {FileSizeBytes} bytes, {ContentType}, {CharacterCount} characters",
+                result.FileName,
+                result.FileSizeBytes,
+                result.ContentType,
+                result.ExtractedCharacterCount);
+        }
+
         return Ok(result);
     }
 }

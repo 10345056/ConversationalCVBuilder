@@ -17,7 +17,7 @@
 
 - Authentication, authorization, tenant/user isolation, and secure shared hosting.
 - Persisted workspace and conversation flow, database migrations, and automated database initialization.
-- OCR for scanned resumes.
+- OCR for scanned resumes using Azure AI Document Intelligence or Azure AI Vision OCR.
 - Reliable cross-browser voice transcription and server-side Whisper workflow integration.
 - Automated end-to-end UI tests and a dedicated backend test suite.
 - Production-grade operational monitoring, backup/restore, and deployment secrets management.
@@ -28,7 +28,7 @@
 1. Add user authentication and scope all profiles and conversations to a user.
 2. Persist the workspace flow, add EF Core migrations, and test upgrades/backup/restore.
 3. Decide on a supported production AI provider and authentication model; keep local Copilot CLI usage development-only.
-4. Add OCR and document-size/format test fixtures.
+4. Add OCR support for scanned PDFs and image resumes using Azure AI Document Intelligence or Azure AI Vision OCR, with document-size/format test fixtures.
 5. Add backend unit/integration tests and frontend end-to-end tests for upload, chat, generation, and exports.
 6. Prepare production Docker settings (non-Development environment, HTTPS/reverse proxy, secrets, health checks, and logging).
 7. Split/lazy-load frontend bundles and add accessibility/browser coverage.

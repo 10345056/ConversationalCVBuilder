@@ -19,6 +19,7 @@ export interface CvProfile {
   projects: string[];
   languages: string[];
   achievements: string[];
+  additionalInformation: string[];
 }
 
 export interface ServerCvProfile extends CvProfile {
@@ -52,6 +53,11 @@ export interface UploadedDocument {
   extractedText: string;
   profile?: CvProfile;
   aiError?: string;
+  status?: "success" | "partial";
+  message?: string;
+  fileSizeBytes?: number;
+  contentType?: string;
+  extractedCharacterCount?: number;
 }
 
 export interface SpeechRecognitionResultEvent extends Event {

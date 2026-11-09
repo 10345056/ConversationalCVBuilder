@@ -6,7 +6,7 @@ public sealed class UploadDocumentCommandValidator : AbstractValidator<UploadDoc
 {
     private const int MaxFileSizeBytes = 10 * 1024 * 1024;
     private static readonly HashSet<string> SupportedExtensions = new(
-        [".pdf", ".docx", ".pptx"],
+        [".pdf", ".docx", ".pptx", ".txt"],
         StringComparer.OrdinalIgnoreCase);
 
     public UploadDocumentCommandValidator()
@@ -15,7 +15,7 @@ public sealed class UploadDocumentCommandValidator : AbstractValidator<UploadDoc
             .Cascade(CascadeMode.Stop)
             .NotEmpty()
             .Must(fileName => SupportedExtensions.Contains(Path.GetExtension(Path.GetFileName(fileName))))
-            .WithMessage("Only PDF, DOCX, and PPTX files are supported.");
+            .WithMessage("Only PDF, DOCX, PPTX, and TXT files are supported.");
         RuleFor(command => command.Content)
             .Cascade(CascadeMode.Stop)
             .NotNull()
