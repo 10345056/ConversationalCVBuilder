@@ -67,7 +67,10 @@ The Vite development server proxies `/api` requests to the HTTPS API, so the bro
 - `PUT /api/workspace/profile` — validates and enhances the supplied CV profile with Copilot when configured.
 - `PUT /api/workspace/profile/manual` — saves edits made directly in the CV preview without running profile enhancement.
 - `POST /api/export/pdf` and `POST /api/export/docx` — optional JSON `{ "templateKey": "classic" }`; returns a branded file.
+- `GET`, `PUT`, and `DELETE /api/design-configurations` — list, save, and delete named shared PDF design presets. `POST /api/export/pdf` also accepts `designConfiguration` to render the live design and custom CV sections.
 - `GET /api/workspace/templates` — list available templates.
+
+The **Config** button in the workspace header opens the PDF designer. Color, font, spacing, density, section visibility/order, NTT DATA logo/footer, and custom section edits update the preview immediately and are included in PDF exports. Named presets are stored in `backend/src/ConversationalCVBuilder.Api/App_Data/cv-design-presets.json`; that file is shared by the API host and must be on persistent storage to survive deployments. Custom section text is CV-specific and is not included in shared presets. DOCX exports continue using their existing fixed layout.
 
 The `.http` file in the API project contains request examples.
 
@@ -96,6 +99,7 @@ The backend stores its SQLite database under `/data`; Compose mounts the named `
 - NTT DATA CV preview and ATS-friendly PDF/DOCX exports with consistent sections, bullet formatting, profile completeness, and a generated-content review notice.
 - Context-aware CV conversation, one-at-a-time follow-up questions, manual editing, and AI-assisted CV enhancement.
 - Classic, Modern, and Creative preview templates.
+- Live PDF template configuration with shared named presets, editable section order/visibility, custom CV sections, and matching PDF output.
 - NTT DATA-branded DOCX, PDF, and JSON exports from the API, including logo, generated date, and page numbers.
 - CQRS application requests use MediatR with a FluentValidation pipeline for CV profile, conversation, document, template, and export operations.
 - SQLite persistence is configured through EF Core with repositories for CV profiles, users, and conversations.
@@ -103,6 +107,6 @@ The backend stores its SQLite database under `/data`; Compose mounts the named `
 
 ## MVP boundaries
 
-The existing conversational workspace remains an in-memory, single-user MVP; the new aggregate repositories use SQLite but have not yet replaced the workspace flow. No uploaded files or audio are persisted. Production deployment needs authenticated user-scoped application flows, database migrations, privacy controls, and configured AI/speech providers. QuestPDF is configured for its Community license; verify license eligibility for the deploying organization or configure a commercial license as required.
+The existing conversational workspace remains an in-memory, single-user MVP; the new aggregate repositories use SQLite but have not yet replaced the workspace flow. No uploaded files or audio are persisted. Shared design preset endpoints are not authenticated; restrict them to trusted administrators before exposing the API to a wider network. Production deployment needs authenticated user-scoped application flows, database migrations, privacy controls, and configured AI/speech providers. QuestPDF is configured for its Community license; verify license eligibility for the deploying organization or configure a commercial license as required.
 
 The existing CQRS `GenerateCv` command validates the draft and returns a structured CV snapshot. The workspace generation action uses the locally authenticated Copilot CLI when available, while the existing API PDF and DOCX exporters render the resulting profile in the NTT DATA template.

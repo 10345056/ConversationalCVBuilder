@@ -36,6 +36,7 @@ public static class DependencyInjection
             provider.GetRequiredService<DocumentParserService>());
         services.AddSingleton<IDocxExporter, DocxExportService>();
         services.AddSingleton<IPdfExporter, PdfExportService>();
+        services.AddSingleton<ICvDesignPresetStore, CvDesignPresetStore>();
 
         var copilot = configuration.GetSection(CopilotOptions.SectionName).Get<CopilotOptions>()
             ?? new CopilotOptions();

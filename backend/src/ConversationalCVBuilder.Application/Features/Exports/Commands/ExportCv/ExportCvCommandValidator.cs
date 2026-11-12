@@ -24,5 +24,8 @@ public sealed class ExportCvCommandValidator : AbstractValidator<ExportCvCommand
                 || templateKey.Equals("modern", StringComparison.OrdinalIgnoreCase)
                 || templateKey.Equals("creative", StringComparison.OrdinalIgnoreCase))
             .WithMessage("Choose a supported CV template.");
+        When(command => command.DesignConfiguration is not null, () =>
+            RuleFor(command => command.DesignConfiguration!)
+                .SetValidator(new CvDesignConfigurationValidator()));
     }
 }

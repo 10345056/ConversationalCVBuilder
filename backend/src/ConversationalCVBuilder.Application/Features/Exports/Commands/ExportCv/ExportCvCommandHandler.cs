@@ -40,7 +40,7 @@ public sealed class ExportCvCommandHandler(
                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                 "docx"),
             "pdf" => (
-                pdfExporter.Export(profile, templateKey),
+                pdfExporter.Export(profile, templateKey, request.DesignConfiguration),
                 "application/pdf",
                 "pdf"),
             "json" => (

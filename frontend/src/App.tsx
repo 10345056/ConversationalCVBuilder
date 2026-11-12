@@ -10,19 +10,24 @@ import {
 } from "@fluentui/react-components";
 import { Sparkle20Regular } from "@fluentui/react-icons";
 import {
+  deleteDesignConfiguration,
   downloadPdf,
   downloadDocx,
+  getDesignConfigurations,
   getWorkspace,
+  saveDesignConfiguration,
   sendMessage,
   saveWorkspaceProfile,
   startNewSession,
   updateWorkspaceProfile,
 } from "./api/client";
+import DesignConfigPanel from "./components/DesignConfigPanel";
 import ConversationPanel from "./components/ConversationPanel";
 import CvPreview from "./components/CvPreview";
 import UploadPanel from "./components/UploadPanel";
 import { hasProfileContent, hasProfileItems, parseResumeText } from "./utils/resumeParser";
-import type { ResumeAnalysisItem, Workspace } from "./types";
+import type { CvDesignConfiguration, ResumeAnalysisItem, Workspace } from "./types";
+import { cloneDesignConfiguration, DEFAULT_CV_DESIGN } from "./utils/designConfiguration";
 
 const useStyles = makeStyles({
   app: {
@@ -45,12 +50,19 @@ export default function App() {
   const [sessionKey, setSessionKey] = useState(0);
   const [draftReady, setDraftReady] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
+  const [designConfiguration, setDesignConfiguration] = useState(() => cloneDesignConfiguration(DEFAULT_CV_DESIGN));
+  const [designPresets, setDesignPresets] = useState<CvDesignConfiguration[]>([]);
+  const [configOpen, setConfigOpen] = useState(false);
+  const [configBusy, setConfigBusy] = useState(false);
 
   const refreshWorkspace = useCallback(async () => {
     setWorkspace(await getWorkspace());
   }, []);
 
   useEffect(() => {
+    void getDesignConfigurations()
+      .then(setDesignPresets)
+      .catch(() => setError("Shared design configurations could not be loaded."));
     void startNewSession()
       .then(setWorkspace)
       .catch((cause: unknown) => {
@@ -140,7 +152,7 @@ export default function App() {
     try {
       setError("");
       setExporting(true);
-      await downloadPdf(workspace?.selectedTemplateId ?? "classic");
+      await downloadPdf(workspace?.selectedTemplateId ?? "classic", designConfiguration);
     } catch {
       setError("Your PDF could not be exported. Please try again.");
     } finally {
@@ -148,10 +160,55 @@ export default function App() {
     }
   }
 
+  async function handleSaveDesignConfiguration(name: string) {
+    setConfigBusy(true);
+    setError("");
+    try {
+      const configurationToSave = {
+        ...designConfiguration,
+        id: designConfiguration.id === "current" ? crypto.randomUUID() : designConfiguration.id,
+        name,
+      };
+      const saved = await saveDesignConfiguration(configurationToSave);
+      setDesignConfiguration((current) => ({ ...saved, customSections: current.customSections }));
+      setDesignPresets((current) => [
+        ...current.filter((preset) => preset.id !== saved.id),
+        { ...saved, customSections: configurationToSave.customSections.map((section) => ({ ...section, content: "" })) },
+      ]);
+    } catch {
+      setError("The shared design configuration could not be saved.");
+    } finally {
+      setConfigBusy(false);
+    }
+  }
+
+  async function handleDeleteDesignConfiguration(id: string) {
+    setConfigBusy(true);
+    setError("");
+    try {
+      await deleteDesignConfiguration(id);
+      setDesignPresets((current) => current.filter((preset) => preset.id !== id));
+      if (designConfiguration.id === id) {
+        setDesignConfiguration(cloneDesignConfiguration(DEFAULT_CV_DESIGN));
+      }
+    } catch {
+      setError("The shared design configuration could not be deleted.");
+    } finally {
+      setConfigBusy(false);
+    }
+  }
+
   return (
     <AnimatePresence mode="wait" initial={false}>
       {!hasEntered ? (
-        <WelcomePage key="welcome" onStart={() => setHasEntered(true)} />
+        <WelcomePage
+          key="welcome"
+          onStart={() => setHasEntered(true)}
+          onOpenConfig={() => {
+            setConfigOpen(true);
+            setHasEntered(true);
+          }}
+        />
       ) : (
     <motion.div
       key="workspace"
@@ -212,6 +269,35 @@ export default function App() {
           </MessageBar>
         )}
         {workspace ? (
+          configOpen ? (
+            <section className="cv-config-layout" aria-label="CV template configuration">
+              <DesignConfigPanel
+                configuration={designConfiguration}
+                presets={designPresets}
+                busy={configBusy}
+                onChange={setDesignConfiguration}
+                onSave={handleSaveDesignConfiguration}
+                onLoad={(configuration) => setDesignConfiguration({
+                  ...configuration,
+                  customSections: configuration.customSections.map((section) => ({ ...section, content: "" })),
+                })}
+                onDelete={handleDeleteDesignConfiguration}
+              />
+              <aside className="preview-column" aria-label="Live CV template preview">
+                <CvPreview
+                  profile={workspace.profile}
+                  templateId={workspace.selectedTemplateId}
+                  designConfiguration={designConfiguration}
+                  designMode
+                  onExportDocx={() => void handleExportDocx()}
+                  onExportPdf={() => void handleExportPdf()}
+                  onSave={handleSaveProfile}
+                  saving={savingProfile}
+                  disabled={exporting || generating || savingProfile}
+                />
+              </aside>
+            </section>
+          ) : (
           <section className="three-panel-layout" aria-label="CV builder workspace">
             <aside className="upload-column" aria-label="Upload section">
               <UploadPanel
@@ -251,6 +337,7 @@ export default function App() {
               <CvPreview
                 profile={workspace.profile}
                 templateId={workspace.selectedTemplateId}
+                designConfiguration={designConfiguration}
                 onExportDocx={() => void handleExportDocx()}
                 onExportPdf={() => void handleExportPdf()}
                 onSave={handleSaveProfile}
@@ -259,6 +346,7 @@ export default function App() {
               />
             </aside>
           </section>
+          )
         ) : (
           <div className="connection-state">
             <Text weight="semibold" size={400}>Your workspace is not available yet.</Text>
@@ -380,7 +468,7 @@ function getWorkspaceAnalysis(workspace: Workspace, extractionFailed = false): R
   });
 }
 
-function WelcomePage({ onStart }: { onStart: () => void }) {
+function WelcomePage({ onStart, onOpenConfig }: { onStart: () => void; onOpenConfig: () => void }) {
   return (
     <motion.main
       className="welcome-screen"
@@ -544,7 +632,12 @@ function WelcomePage({ onStart }: { onStart: () => void }) {
 
       <footer className="welcome-footer">
         <span>Built for the people behind the possibilities.</span>
-        <span><i /> Professional tools for clear, confident CVs</span>
+        <span className="welcome-footer-tools">
+          <span className="welcome-footer-tagline"><i /> Professional tools for clear, confident CVs</span>
+          <button className="welcome-config-button" type="button" onClick={onOpenConfig}>
+            Config
+          </button>
+        </span>
       </footer>
     </motion.main>
   );

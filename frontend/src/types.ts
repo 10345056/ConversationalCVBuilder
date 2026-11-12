@@ -43,6 +43,36 @@ export interface Workspace {
   aiSuggestedImprovements: string[];
 }
 
+export interface CvDesignSection {
+  id: string;
+  title: string;
+  enabled: boolean;
+  order: number;
+}
+
+export interface CvDesignCustomSection {
+  id: string;
+  title: string;
+  content: string;
+}
+
+export interface CvDesignConfiguration {
+  id: string;
+  name: string;
+  primaryColor: string;
+  secondaryColor: string;
+  lightColor: string;
+  fontFamily: string;
+  fontSize: number;
+  pageMargin: number;
+  sectionSpacing: number;
+  layout: "standard" | "compact";
+  showLogo: boolean;
+  showFooter: boolean;
+  sections: CvDesignSection[];
+  customSections: CvDesignCustomSection[];
+}
+
 export interface ResumeAnalysisItem {
   label: string;
   found: boolean;

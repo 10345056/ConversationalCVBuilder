@@ -26,4 +26,5 @@ Thumbs.db
 *.db
 *.db-shm
 *.db-wal
+**/App_Data/cv-design-presets.json
 /package-lock.json

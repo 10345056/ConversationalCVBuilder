@@ -1,4 +1,4 @@
-import type { CvProfile, UploadedDocument, Workspace } from "../types";
+import type { CvDesignConfiguration, CvProfile, UploadedDocument, Workspace } from "../types";
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "";
 
@@ -59,19 +59,47 @@ export async function uploadDocument(file: File): Promise<UploadedDocument> {
   });
 }
 
-export async function downloadPdf(templateId: string): Promise<void> {
-  await downloadExport("pdf", templateId);
+export async function getDesignConfigurations(): Promise<CvDesignConfiguration[]> {
+  return request<CvDesignConfiguration[]>("/api/design-configurations");
+}
+
+export async function saveDesignConfiguration(
+  configuration: CvDesignConfiguration,
+): Promise<CvDesignConfiguration> {
+  return request<CvDesignConfiguration>("/api/design-configurations", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(configuration),
+  });
+}
+
+export async function deleteDesignConfiguration(id: string): Promise<void> {
+  const response = await fetch(`${apiBaseUrl}/api/design-configurations/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+  if (!response.ok) throw new Error("The shared configuration could not be deleted.");
+}
+
+export async function downloadPdf(
+  templateId: string,
+  designConfiguration: CvDesignConfiguration,
+): Promise<void> {
+  await downloadExport("pdf", templateId, designConfiguration);
 }
 
 export async function downloadDocx(templateId: string): Promise<void> {
   await downloadExport("docx", templateId);
 }
 
-async function downloadExport(format: "pdf" | "docx", templateId: string): Promise<void> {
+async function downloadExport(
+  format: "pdf" | "docx",
+  templateId: string,
+  designConfiguration?: CvDesignConfiguration,
+): Promise<void> {
   const response = await fetch(`${apiBaseUrl}/api/export/${format}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ templateKey: templateId }),
+    body: JSON.stringify({ templateKey: templateId, designConfiguration }),
   });
   if (!response.ok) {
     throw new Error("Your CV could not be exported. Please try again.");

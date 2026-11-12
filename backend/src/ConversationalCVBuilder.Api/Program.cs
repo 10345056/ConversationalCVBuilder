@@ -8,6 +8,8 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+builder.Configuration["DesignConfigurations:FilePath"] = Path.Combine(
+    builder.Environment.ContentRootPath, "App_Data", "cv-design-presets.json");
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
 var allowedOrigins = new[] { "http://localhost:3000", "http://localhost:5173" };

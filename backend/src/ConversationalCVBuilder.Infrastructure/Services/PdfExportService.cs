@@ -1,4 +1,5 @@
 using ConversationalCVBuilder.Application.Abstractions;
+using ConversationalCVBuilder.Application.Contracts;
 using ConversationalCVBuilder.Domain.Entities;
 using QuestPDF.Fluent;
 using QuestPDF.Helpers;
@@ -8,19 +9,22 @@ namespace ConversationalCVBuilder.Infrastructure.Services;
 
 public sealed class PdfExportService : IPdfExporter
 {
-    private const string Primary = "#00A9E0";
-    private const string Secondary = "#003B5C";
-    private const string LightBlue = "#F5FBFF";
-
     static PdfExportService()
     {
         QuestPDF.Settings.License = LicenseType.Community;
     }
 
-    public byte[] Export(CvProfile profile, string? templateKey = null)
+    public byte[] Export(
+        CvProfile profile,
+        string? templateKey = null,
+        CvDesignConfiguration? designConfiguration = null)
     {
         ArgumentNullException.ThrowIfNull(profile);
-        var logo = NttBrandAssets.ReadLogo();
+        var design = designConfiguration ?? new CvDesignConfiguration();
+        var primary = design.PrimaryColor;
+        var secondary = design.SecondaryColor;
+        var lightColor = design.LightColor;
+        var logo = design.ShowLogo ? NttBrandAssets.ReadLogo() : null;
         var generatedAt = DateTimeOffset.UtcNow;
         var contact = string.Join("  |  ", new[]
         {
@@ -31,23 +35,58 @@ public sealed class PdfExportService : IPdfExporter
             profile.PersonalInformation.LinkedInUrl?.ToString()
         }.Where(value => !string.IsNullOrWhiteSpace(value)));
 
+        var sectionContent = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["summary"] = profile.Summary,
+            ["skills"] = FormatSkills(profile.SkillItems
+                .OrderBy(item => item.DisplayOrder)
+                .Select(item => item.Name)),
+            ["experience"] = string.Join(Environment.NewLine + Environment.NewLine,
+                profile.WorkExperiences.OrderBy(item => item.DisplayOrder).Select(item =>
+                    $"{JoinNonEmpty(item.PositionTitle, item.EmployerName, FormatDates(item.StartDate, item.EndDate, item.IsCurrent))}{Environment.NewLine}{item.Description}".Trim())),
+            ["achievements"] = string.Join(Environment.NewLine, profile.Achievements),
+            ["projects"] = string.Join(Environment.NewLine + Environment.NewLine,
+                profile.Projects.OrderBy(item => item.DisplayOrder).Select(item =>
+                    $"{item.Name}{Environment.NewLine}{JoinNonEmpty(item.Description, item.Technologies.Count == 0 ? null : $"Technologies: {string.Join(", ", item.Technologies)}")}".Trim())),
+            ["certifications"] = string.Join(Environment.NewLine, profile.Certifications
+                .OrderBy(item => item.DisplayOrder)
+                .Select(item => JoinNonEmpty(item.Name, item.IssuingOrganization, item.CredentialId))),
+            ["education"] = string.Join(Environment.NewLine + Environment.NewLine,
+                profile.EducationEntries.OrderBy(item => item.DisplayOrder).Select(item =>
+                    $"{JoinNonEmpty(item.Qualification, item.InstitutionName, item.FieldOfStudy, FormatDates(item.StartDate, item.EndDate, item.IsInProgress))}{Environment.NewLine}{item.Description}".Trim())),
+            ["additional"] = string.Join("  •  ", profile.LanguageLabels
+                .Concat(profile.AdditionalInformation)
+                .Where(item => !string.IsNullOrWhiteSpace(item)))
+        };
+        var configuredSections = design.Sections.Count == 0
+            ? CreateDefaultSections()
+            : design.Sections;
+        var orderedSections = configuredSections
+            .Where(section => section.Enabled && sectionContent.ContainsKey(section.Id))
+            .OrderBy(section => section.Order)
+            .ToArray();
+
         return Document.Create(document =>
         {
             document.Page(page =>
             {
                 page.Size(PageSizes.A4);
-                page.Margin(42);
-                page.DefaultTextStyle(style => style.FontSize(10).FontColor(Secondary));
-                page.Header().PaddingBottom(14).Background(LightBlue).Padding(15).Row(row =>
+                page.Margin(design.PageMargin);
+                page.DefaultTextStyle(style => style.FontSize(design.FontSize).FontFamily(design.FontFamily).FontColor(secondary));
+                page.Header().PaddingBottom(14).Background(lightColor).Padding(15).Row(row =>
                 {
-                    row.ConstantItem(112).Height(34).Image(logo).FitArea();
-                    row.RelativeItem().PaddingLeft(16).Column(header =>
+                    if (logo is not null)
                     {
-                        header.Item().Text("PERSONAL INFORMATION").FontSize(8).Bold().FontColor(Primary);
-                        header.Item().Text(profile.FullName).FontSize(22).Bold().FontColor(Secondary);
+                        row.ConstantItem(112).Height(34).Image(logo).FitArea();
+                    }
+
+                    row.RelativeItem().PaddingLeft(logo is not null ? 16 : 0).Column(header =>
+                    {
+                        header.Item().Text("PERSONAL INFORMATION").FontSize(design.FontSize - 2).Bold().FontColor(primary);
+                        header.Item().Text(profile.FullName).FontSize(design.FontSize + 12).Bold().FontColor(secondary);
                         if (!string.IsNullOrWhiteSpace(profile.TargetRole))
                         {
-                            header.Item().PaddingTop(2).Text(profile.TargetRole).FontSize(12).FontColor(Primary);
+                            header.Item().PaddingTop(2).Text(profile.TargetRole).FontSize(design.FontSize + 2).FontColor(primary);
                         }
 
                         if (!string.IsNullOrWhiteSpace(contact))
@@ -63,55 +102,64 @@ public sealed class PdfExportService : IPdfExporter
                 });
                 page.Content().PaddingTop(8).Column(content =>
                 {
-                    content.Spacing(8);
-                    AddSection(content, "Professional Summary", profile.Summary);
-                    AddSection(content, "Technical Skills", FormatSkills(profile.SkillItems
-                        .OrderBy(item => item.DisplayOrder)
-                        .Select(item => item.Name)));
-                    AddSection(content, "Professional Experience", string.Join(Environment.NewLine + Environment.NewLine,
-                        profile.WorkExperiences.OrderBy(item => item.DisplayOrder).Select(item =>
-                            $"{JoinNonEmpty(item.PositionTitle, item.EmployerName, FormatDates(item.StartDate, item.EndDate, item.IsCurrent))}{Environment.NewLine}{item.Description}".Trim())));
-                    AddSection(content, "Key Achievements", string.Join(Environment.NewLine, profile.Achievements));
-                    AddSection(content, "Projects", string.Join(Environment.NewLine + Environment.NewLine,
-                        profile.Projects.OrderBy(item => item.DisplayOrder).Select(item =>
-                            $"{item.Name}{Environment.NewLine}{JoinNonEmpty(item.Description, item.Technologies.Count == 0 ? null : $"Technologies: {string.Join(", ", item.Technologies)}")}".Trim())));
-                    AddSection(content, "Certifications", string.Join(Environment.NewLine, profile.Certifications
-                        .OrderBy(item => item.DisplayOrder)
-                        .Select(item => JoinNonEmpty(item.Name, item.IssuingOrganization, item.CredentialId))));
-                    AddSection(content, "Education", string.Join(Environment.NewLine + Environment.NewLine,
-                        profile.EducationEntries.OrderBy(item => item.DisplayOrder).Select(item =>
-                            $"{JoinNonEmpty(item.Qualification, item.InstitutionName, item.FieldOfStudy, FormatDates(item.StartDate, item.EndDate, item.IsInProgress))}{Environment.NewLine}{item.Description}".Trim())));
-                    AddSection(content, "Additional Information", string.Join("  •  ", profile.LanguageLabels
-                        .Concat(profile.AdditionalInformation)
-                        .Where(item => !string.IsNullOrWhiteSpace(item))));
+                    content.Spacing(design.SectionSpacing);
+                    foreach (var section in orderedSections)
+                    {
+                        AddSection(content, section.Title, sectionContent[section.Id], design);
+                    }
+
+                    foreach (var section in design.CustomSections)
+                    {
+                        AddSection(content, section.Title, section.Content, design);
+                    }
                 });
-                page.Footer().PaddingTop(10).BorderTop(1).BorderColor("#D8EAF3").Row(row =>
+                if (design.ShowFooter)
                 {
-                    row.RelativeItem().Text(
-                        $"NTT DATA Professional CV · {generatedAt:yyyy-MM-dd}")
-                        .FontSize(7).FontColor(Colors.Grey.Darken1);
-                    row.ConstantItem(85).AlignRight().DefaultTextStyle(style =>
-                        style.FontSize(8).FontColor(Secondary)).Text(text =>
-                        {
-                            text.Span("Page ");
-                            text.CurrentPageNumber();
-                            text.Span(" of ");
-                            text.TotalPages();
-                        });
-                });
+                    page.Footer().PaddingTop(10).BorderTop(1).BorderColor(lightColor).Row(row =>
+                    {
+                        row.RelativeItem().Text(
+                            $"NTT DATA Professional CV · {generatedAt:yyyy-MM-dd}")
+                            .FontSize(design.FontSize - 3).FontColor(Colors.Grey.Darken1);
+                        row.ConstantItem(85).AlignRight().DefaultTextStyle(style =>
+                            style.FontSize(design.FontSize - 2).FontColor(secondary)).Text(text =>
+                            {
+                                text.Span("Page ");
+                                text.CurrentPageNumber();
+                                text.Span(" of ");
+                                text.TotalPages();
+                            });
+                    });
+                }
             });
         }).GeneratePdf();
     }
 
-    private static void AddSection(ColumnDescriptor column, string heading, string? content)
+    private static List<CvDesignSection> CreateDefaultSections() =>
+    [
+        new("summary", "Professional Summary", true, 0),
+        new("skills", "Technical Skills", true, 1),
+        new("experience", "Professional Experience", true, 2),
+        new("achievements", "Key Achievements", true, 3),
+        new("projects", "Projects", true, 4),
+        new("certifications", "Certifications", true, 5),
+        new("education", "Education", true, 6),
+        new("additional", "Additional Information", true, 7)
+    ];
+
+    private static void AddSection(
+        ColumnDescriptor column,
+        string heading,
+        string? content,
+        CvDesignConfiguration design)
     {
-        column.Item().Background(LightBlue).BorderLeft(3).BorderColor(Primary).Padding(9).Column(section =>
+        var padding = design.Layout == "compact" ? 6 : 9;
+        column.Item().Background(design.LightColor).BorderLeft(3).BorderColor(design.PrimaryColor).Padding(padding).Column(section =>
         {
-            section.Item().Text(heading.ToUpperInvariant()).FontSize(10).Bold().FontColor(Primary);
+            section.Item().Text(heading.ToUpperInvariant()).FontSize(design.FontSize).Bold().FontColor(design.PrimaryColor);
             var value = string.IsNullOrWhiteSpace(content) ? CvExportMissingContent.For(heading) : content.Trim();
             var lines = value.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
             section.Item().PaddingTop(4).Text(string.Join(Environment.NewLine, lines.Select(FormatBullet)))
-                .FontSize(9).FontColor(Secondary);
+                .FontSize(design.FontSize - 1).FontFamily(design.FontFamily).FontColor(design.SecondaryColor);
         });
     }
 

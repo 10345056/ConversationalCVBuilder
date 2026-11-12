@@ -56,7 +56,7 @@ public sealed class ExportController(ISender sender) : ControllerBase
         CancellationToken cancellationToken)
     {
         var export = await sender.Send(
-            new ExportCvCommand("pdf", request.CvProfileId, request.TemplateKey),
+            new ExportCvCommand("pdf", request.CvProfileId, request.TemplateKey, request.DesignConfiguration),
             cancellationToken);
         return File(export.Content, export.ContentType, export.FileName);
     }

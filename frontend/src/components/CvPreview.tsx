@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { motion } from "framer-motion";
+import { useEffect, useRef, useState } from "react";
+import { motion, useReducedMotion } from "framer-motion";
 import {
   Badge,
   Button,
@@ -9,10 +9,10 @@ import {
   Text,
   makeStyles,
 } from "@fluentui/react-components";
-import { ArrowDownload20Regular, DocumentPdf20Regular, Edit20Regular, Save20Regular } from "@fluentui/react-icons";
-import type { CvProfile } from "../types";
+import { ArrowDownload20Regular, ArrowUp20Regular, DocumentPdf20Regular, Edit20Regular, Save20Regular } from "@fluentui/react-icons";
+import type { CSSProperties, ReactNode } from "react";
+import type { CvDesignConfiguration, CvProfile } from "../types";
 import { calculateCompletion, hasProfileContent, hasProfileItems } from "../utils/resumeParser";
-import type { ReactNode } from "react";
 
 const useStyles = makeStyles({
   card: { padding: "20px", minHeight: "520px" },
@@ -33,6 +33,8 @@ const useStyles = makeStyles({
 interface CvPreviewProps {
   profile: CvProfile;
   templateId: string;
+  designConfiguration: CvDesignConfiguration;
+  designMode?: boolean;
   onExportDocx: () => void;
   onExportPdf: () => void;
   onSave: (profile: CvProfile) => Promise<boolean>;
@@ -43,6 +45,8 @@ interface CvPreviewProps {
 export default function CvPreview({
   profile,
   templateId,
+  designConfiguration,
+  designMode = false,
   onExportDocx,
   onExportPdf,
   onSave,
@@ -50,12 +54,68 @@ export default function CvPreview({
   disabled,
 }: CvPreviewProps) {
   const styles = useStyles();
+  const prefersReducedMotion = useReducedMotion();
   const [editing, setEditing] = useState(false);
   const [editedProfile, setEditedProfile] = useState(profile);
+  const previewScrollRef = useRef<HTMLDivElement>(null);
   const currentProfile = editing ? editedProfile : profile;
   const contact = [currentProfile.email, currentProfile.phone, currentProfile.location, currentProfile.linkedIn].filter(Boolean).join("  |  ");
   const completion = calculateCompletion(currentProfile);
   const dirty = JSON.stringify(editedProfile) !== JSON.stringify(profile);
+  const documentStyle: CSSProperties & Record<`--cv-${string}`, string> = {
+    "--cv-primary": designConfiguration.primaryColor,
+    "--cv-secondary": designConfiguration.secondaryColor,
+    "--cv-light": designConfiguration.lightColor,
+    "--cv-font-family": designConfiguration.fontFamily,
+    "--cv-font-size": `${designConfiguration.fontSize}px`,
+    "--cv-section-spacing": `${designConfiguration.sectionSpacing}px`,
+  };
+  const sectionContent: Record<string, ReactNode> = {
+    summary: editing
+      ? <Textarea aria-label="Professional Summary" resize="vertical" value={editableText(currentProfile.summary)} onChange={(_, data) => setText("summary", data.value)} />
+      : currentProfile.summary || "Please add this information.",
+    skills: editing ? (
+      <EditableList value={currentProfile.skills} label="Technical Skills" onChange={(value) => setItems("skills", value)} />
+    ) : hasProfileItems(currentProfile.skills) ? (
+      <div className="skill-list">
+        <Text className="skill-note" size={100}>Skills are grouped by topic for easier review. Please confirm each item.</Text>
+        {groupSkills(currentProfile.skills).map((group) => (
+          <section className="skill-category" key={group.label}>
+            <div className="skill-category-heading">
+              <Text className="skill-category-title" size={200} weight="semibold">{group.label}</Text>
+              <Text className="skill-category-count" size={100}>
+                {group.items.length} {group.items.length === 1 ? "item" : "items"}
+              </Text>
+            </div>
+            <div className="skill-category-items">
+              {group.items.map((skill, index) => <span className="skill-chip" key={`${skill}-${index}`}>{skill}</span>)}
+            </div>
+          </section>
+        ))}
+      </div>
+    ) : "Please add this information.",
+    experience: editing
+      ? <EditableList value={currentProfile.experience} label="Professional Experience" onChange={(value) => setItems("experience", value)} />
+      : formatEntries(currentProfile.experience, "Experience"),
+    achievements: editing
+      ? <EditableList value={currentProfile.achievements} label="Key Achievements" onChange={(value) => setItems("achievements", value)} />
+      : formatEntries(currentProfile.achievements, "Achievements"),
+    projects: editing
+      ? <EditableList value={currentProfile.projects} label="Projects" onChange={(value) => setItems("projects", value)} />
+      : formatEntries(currentProfile.projects, "Projects"),
+    certifications: editing
+      ? <EditableList value={currentProfile.certifications} label="Certifications" onChange={(value) => setItems("certifications", value)} />
+      : formatEntries(currentProfile.certifications, "Certifications"),
+    education: editing
+      ? <EditableList value={currentProfile.education} label="Education" onChange={(value) => setItems("education", value)} />
+      : formatEntries(currentProfile.education, "Education"),
+    additional: editing ? (
+      <>
+        <EditableList value={currentProfile.languages.filter((item) => !isPlaceholder(item))} label="Languages" onChange={(value) => setItems("languages", value)} />
+        <EditableList value={currentProfile.additionalInformation} label="Additional Information" onChange={(value) => setItems("additionalInformation", value)} />
+      </>
+    ) : formatEntries([...currentProfile.languages, ...currentProfile.additionalInformation], "Languages"),
+  };
 
   useEffect(() => setEditedProfile(profile), [profile]);
 
@@ -76,15 +136,17 @@ export default function CvPreview({
 
   return (
     <Card className={styles.card}>
-      <div className="panel-heading preview-heading">
-        <div>
-          <Text weight="semibold" size={400}>CV Preview</Text>
-          <Text className="muted-text" size={200}>NTT DATA Professional Template</Text>
+      {!designMode && (
+        <div className="panel-heading preview-heading">
+          <div>
+            <Text weight="semibold" size={400}>CV Preview</Text>
+            <Text className="muted-text" size={200}>NTT DATA Professional Template</Text>
+          </div>
+          <Badge appearance="tint" color="success">{dirty ? "Edits pending" : "Current"}</Badge>
         </div>
-        <Badge appearance="tint" color="success">{dirty ? "Edits pending" : "Current"}</Badge>
-      </div>
+      )}
 
-      <div className="profile-completion">
+      {!designMode && <div className="profile-completion">
         <div className="profile-completion-label">
           <Text size={200} weight="semibold">Profile Completeness</Text>
           <Text size={200} weight="semibold">{completion}% Complete</Text>
@@ -118,9 +180,9 @@ export default function CvPreview({
         <Text className="completion-weight-note" size={100}>
           Certifications, Education, and Additional Information share 10%; each missing section reduces the score by 5 points.
         </Text>
-      </div>
+      </div>}
 
-      {completion < 100 && (
+      {!designMode && completion < 100 && (
         <div className="cv-missing-notice" role="status">
           <Text size={200}>Some information may require verification. Please review all sections before exporting.</Text>
           {!editing && (
@@ -131,15 +193,52 @@ export default function CvPreview({
         </div>
       )}
 
-      <motion.article
-        className={`cv-paper cv-paper-${templateId} ${styles.preview} ntt-cv-paper`}
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.3 }}
+      <motion.section
+        className="cv-window"
+        style={documentStyle}
+        initial={prefersReducedMotion ? false : { opacity: 0, y: 18, scale: 0.97 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.48, ease: [0.22, 1, 0.36, 1] }}
+        aria-label="Animated CV document preview"
       >
+        <div className="cv-window-toolbar">
+          <div className="cv-window-title">
+            <span className="cv-window-controls" aria-hidden="true">
+              <i />
+              <i />
+              <i />
+            </span>
+            <span className="cv-window-label">LIVE PREVIEW</span>
+          </div>
+          <div className="cv-window-meta">
+            <span>NTT DATA Professional CV</span>
+            <Button
+              appearance="subtle"
+              size="small"
+              icon={<ArrowUp20Regular />}
+              aria-label="Scroll CV preview to top"
+              onClick={() => previewScrollRef.current?.scrollTo({ top: 0, behavior: "smooth" })}
+            >
+              Top
+            </Button>
+          </div>
+        </div>
+        <div
+          ref={previewScrollRef}
+          className="cv-window-viewport"
+          role="region"
+          aria-label="Scrollable CV document"
+          tabIndex={0}
+        >
+        <motion.article
+          className={`cv-paper cv-paper-${templateId} cv-paper-density-${designConfiguration.layout} ${styles.preview} ntt-cv-paper`}
+          initial={prefersReducedMotion ? false : { opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.35, delay: 0.08 }}
+        >
         <header className="cv-header ntt-cv-header">
           <div className="cv-brand-row">
-            <img src="/assets/ntt-logo.png" alt="NTT DATA" />
+            {designConfiguration.showLogo && <img src="/assets/ntt-logo.png" alt="NTT DATA" />}
             <span>PROFESSIONAL CV</span>
           </div>
           <Text className="ntt-cv-section-title" size={200} weight="semibold">PERSONAL INFORMATION</Text>
@@ -161,76 +260,27 @@ export default function CvPreview({
           )}
         </header>
 
-        <CvSection title="Professional Summary" className={styles.section} titleClassName={styles.sectionTitle}>
-          {editing
-            ? <Textarea aria-label="Professional Summary" resize="vertical" value={editableText(currentProfile.summary)} onChange={(_, data) => setText("summary", data.value)} />
-            : currentProfile.summary || "Please add this information."}
-        </CvSection>
-        <CvSection title="Technical Skills" className={styles.section} titleClassName={styles.sectionTitle}>
-          {editing ? (
-            <EditableList value={currentProfile.skills} label="Technical Skills" onChange={(value) => setItems("skills", value)} />
-          ) : hasProfileItems(currentProfile.skills) ? (
-            <div className="skill-list">
-              <Text className="skill-note" size={100}>
-                Skills are grouped by topic for easier review. Please confirm each item.
-              </Text>
-              {groupSkills(profile.skills).map((group) => (
-                <section className="skill-category" key={group.label}>
-                  <div className="skill-category-heading">
-                    <Text className="skill-category-title" size={200} weight="semibold">{group.label}</Text>
-                    <Text className="skill-category-count" size={100}>
-                      {group.items.length} {group.items.length === 1 ? "item" : "items"}
-                    </Text>
-                  </div>
-                  <div className="skill-category-items">
-                    {group.items.map((skill, index) => (
-                      <span className="skill-chip" key={`${skill}-${index}`}>{skill}</span>
-                    ))}
-                  </div>
-                </section>
-              ))}
-            </div>
-          ) : "Please add this information."}
-        </CvSection>
-        <CvSection title="Professional Experience" className={styles.section} titleClassName={styles.sectionTitle}>
-          {editing
-            ? <EditableList value={currentProfile.experience} label="Professional Experience" onChange={(value) => setItems("experience", value)} />
-            : formatEntries(currentProfile.experience, "Experience")}
-        </CvSection>
-        <CvSection title="Key Achievements" className={styles.section} titleClassName={styles.sectionTitle}>
-          {editing
-            ? <EditableList value={currentProfile.achievements} label="Key Achievements" onChange={(value) => setItems("achievements", value)} />
-            : formatEntries(currentProfile.achievements, "Achievements")}
-        </CvSection>
-        <CvSection title="Projects" className={styles.section} titleClassName={styles.sectionTitle}>
-          {editing
-            ? <EditableList value={currentProfile.projects} label="Projects" onChange={(value) => setItems("projects", value)} />
-            : formatEntries(currentProfile.projects, "Projects")}
-        </CvSection>
-        <CvSection title="Certifications" className={styles.section} titleClassName={styles.sectionTitle}>
-          {editing
-            ? <EditableList value={currentProfile.certifications} label="Certifications" onChange={(value) => setItems("certifications", value)} />
-            : formatEntries(currentProfile.certifications, "Certifications")}
-        </CvSection>
-        <CvSection title="Education" className={styles.section} titleClassName={styles.sectionTitle}>
-          {editing
-            ? <EditableList value={currentProfile.education} label="Education" onChange={(value) => setItems("education", value)} />
-            : formatEntries(currentProfile.education, "Education")}
-        </CvSection>
-        <CvSection title="Additional Information" className={styles.section} titleClassName={styles.sectionTitle}>
-          {editing ? (
-            <>
-              <EditableList value={currentProfile.languages.filter((item) => !isPlaceholder(item))} label="Languages" onChange={(value) => setItems("languages", value)} />
-              <EditableList value={currentProfile.additionalInformation} label="Additional Information" onChange={(value) => setItems("additionalInformation", value)} />
-            </>
-          ) : formatEntries([...currentProfile.languages, ...currentProfile.additionalInformation], "Languages")}
-        </CvSection>
-        <footer className="cv-template-footer">
+        {[...designConfiguration.sections]
+          .filter((section) => section.enabled)
+          .sort((left, right) => left.order - right.order)
+          .map((section) => (
+            <CvSection key={section.id} title={section.title} className={styles.section} titleClassName={styles.sectionTitle}>
+              {sectionContent[section.id] ?? ""}
+            </CvSection>
+          ))}
+        {designConfiguration.customSections.map((section) => (
+          <CvSection key={section.id} title={section.title} className={styles.section} titleClassName={styles.sectionTitle}>
+            {section.content || "Please add this information."}
+          </CvSection>
+        ))}
+        {designConfiguration.showFooter && <footer className="cv-template-footer">
           NTT DATA Professional CV Builder
-        </footer>
-      </motion.article>
+        </footer>}
+        </motion.article>
+        </div>
+      </motion.section>
 
-      <div className={styles.actions}>
+      {!designMode && <div className={styles.actions}>
         {editing ? (
           <>
             <Button appearance="primary" icon={<Save20Regular />} disabled={disabled || saving || !dirty || !currentProfile.fullName.trim()} onClick={() => void saveEdits()}>
@@ -266,7 +316,7 @@ export default function CvPreview({
         >
           Download Word
         </Button>
-      </div>
+      </div>}
     </Card>
   );
 }
@@ -298,7 +348,7 @@ function CvSection({
   titleClassName: string;
 }) {
   return (
-    <section className={className}>
+    <section className={`cv-section ${className}`}>
       <Text className={`ntt-cv-section-title ${titleClassName}`} size={200} weight="semibold">{title}</Text>
       <div className="cv-section-content">{children}</div>
     </section>
